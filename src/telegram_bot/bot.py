@@ -105,10 +105,43 @@ if AIOGRAM_AVAILABLE:
     @dp.message(F.photo | F.document | F.video | F.audio | F.voice)
     async def handle_media(message: Message) -> None:
         thread_id = _get_thread_id(message)
-        caption = message.caption or "без описания"
-        logger.info("Media from thread_id=%s, caption=%.80s", thread_id, caption)
-        await _call_agent(f"[Пользователь прислал файл/медиа. Описание: {caption}]", thread_id)
-        await message.answer("Получил ваш файл — передаю менеджеру для обработки.\nОн свяжется с вами в течение рабочего дня.")
+        caption = message.caption or ""
+        username = (message.from_user.username and f"@{message.from_user.username}") \
+                   or f"tg_{message.from_user.id}"
+
+        media_type = (
+            "фото" if message.photo else
+            "документ" if message.document else
+            "видео" if message.video else
+            "аудио" if message.audio else
+            "голосовое" if message.voice else "файл"
+        )
+        logger.info("Media(%s) from thread_id=%s caption=%.80s", media_type, thread_id, caption)
+
+        # 1. Сразу ответить пользователю
+        await message.answer(
+            "📎 Получил ваш файл — передаю менеджеру для обработки.\n"
+            "Он свяжется с вами в течение рабочего дня."
+        )
+
+        # 2. Скачать файл через input-бот и переслать через notification-бот
+        #    (input-бот может не состоять в группе менеджеров — forward_message не работает)
+        from src.common.telegram_notifier import send_file_to_group
+        sent = await send_file_to_group(
+            message=message,
+            media_type=media_type,
+            username=username,
+            caption=caption,
+        )
+        if not sent:
+            logger.warning("File from %s was NOT forwarded to manager group", username)
+
+        # 3. Добавить событие в историю диалога агента
+        await _call_agent(
+            f"[Клиент прислал {media_type}."
+            + (f" Описание: {caption}" if caption else "") + "]",
+            thread_id,
+        )
 
 
 # ─── Запуск / остановка ─────────────────────────────────────

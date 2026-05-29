@@ -309,12 +309,7 @@ def find_product_best(db: Session, query: str) -> Optional[Product]:
     return None
 
 
-def get_products_by_name(product_name: str, limit: int = 10) -> List[dict]:
-    """Поиск товаров по подстроке в наименовании. Возвращает полные карточки."""
-    db = next(get_db())
-    rows = db.scalars(
-        select(Product).where(Product.name.ilike(f"%{product_name}%")).limit(limit)
-    ).all()
+def _rows_to_dicts(rows) -> List[dict]:
     return [
         {
             "articul": r.articul,
@@ -326,6 +321,53 @@ def get_products_by_name(product_name: str, limit: int = 10) -> List[dict]:
         }
         for r in rows
     ]
+
+
+def get_products_by_name(product_name: str, limit: int = 15) -> List[dict]:
+    """
+    Трёхуровневый поиск по наименованию. Возвращает полные карточки.
+
+    Стратегия 1 — ILIKE всей фразой: 'кабель ВВГ 3х2.5' → ищет подстроку целиком.
+    Стратегия 2 — AND по токенам: каждое слово должно присутствовать в названии.
+    Стратегия 3 — OR по токенам: хоть одно слово совпадает, сортировка по числу совпадений.
+    """
+    db = next(get_db())
+
+    # Стратегия 1: полная подстрока
+    rows = db.scalars(
+        select(Product).where(Product.name.ilike(f"%{product_name}%")).limit(limit)
+    ).all()
+    if rows:
+        return _rows_to_dicts(rows)
+
+    # Токенизация для стратегий 2 и 3
+    tokens = _tokenize(product_name)
+    if not tokens:
+        return []
+
+    # Стратегия 2: все токены присутствуют (AND)
+    q = select(Product)
+    for t in tokens:
+        q = q.where(Product.name.ilike(f"%{t}%"))
+    rows = db.scalars(q.limit(limit)).all()
+    if rows:
+        return _rows_to_dicts(rows)
+
+    # Стратегия 3: хотя бы один токен (OR), сортировка по числу совпадений
+    rows = db.scalars(
+        select(Product)
+        .where(or_(*[Product.name.ilike(f"%{t}%") for t in tokens]))
+        .limit(limit * 3)
+    ).all()
+    if rows:
+        scored = sorted(
+            rows,
+            key=lambda r: sum(1 for t in tokens if t in r.name.lower()),
+            reverse=True,
+        )
+        return _rows_to_dicts(scored[:limit])
+
+    return []
 
 
 def get_product_price_by_name(db: Session, product_name: str) -> Optional[dict]:
