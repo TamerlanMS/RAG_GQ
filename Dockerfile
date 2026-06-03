@@ -23,7 +23,7 @@ RUN poetry config virtualenvs.create false
 RUN poetry install --only main --no-root --no-interaction --no-ansi
 
 # Install additional packages not managed by poetry lock
-RUN pip install --no-cache-dir aiogram httpx
+RUN pip install --no-cache-dir aiogram httpx openpyxl
 
 # Copy the rest of the application
 COPY . .

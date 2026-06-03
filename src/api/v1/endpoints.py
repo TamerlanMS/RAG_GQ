@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Path
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Path, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -12,6 +12,9 @@ from starlette.requests import Request
 from src.common.logger import logger
 from src.common.Schemas.product_schemas import ProductCreate, ProductResponse, ProductUpdate
 from src.common.tools.ReAct_agent import agent
+from src.supplier_parser.importer import parse_file, diff_file, confirm_import
+from src.supplier_parser.registry import list_suppliers
+from src.db.Models.supplier_models import ImportLog
 from src.db.CRUD import (
     create_db,
     create_product,
@@ -217,3 +220,128 @@ async def delete_product_endpoint(
     deleted = delete_product(db, product_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+
+
+# ─────────────────────────── Supplier Price Import ─────────────────────────── #
+
+import tempfile, os as _os
+
+class ConfirmImportRequest(BaseModel):
+    supplier_code: str
+    file_name: str
+    mark_deleted: bool = False
+
+
+# Временное хранилище diff_result между шагами (в памяти, per-process)
+# В продакшене заменить на Redis или таблицу import_sessions
+_pending_imports: Dict[str, Any] = {}
+
+
+@router.get("/suppliers", tags=["suppliers"])
+async def get_suppliers():
+    """Список поставщиков с зарегистрированными парсерами."""
+    return {"suppliers": list_suppliers()}
+
+
+@router.post("/suppliers/upload", tags=["suppliers"])
+async def upload_supplier_price(
+    file: UploadFile = File(...),
+    supplier_code: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Загрузить прайс-лист поставщика (.xlsx).
+    1. Автоопределение поставщика (или передать supplier_code вручную).
+    2. Парсинг файла.
+    3. Diff против текущей БД.
+    4. Возврат summary + preview первых 10 строк каждой категории.
+    Для применения изменений вызвать POST /suppliers/confirm.
+    """
+    if not file.filename.endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="Поддерживаются только .xlsx/.xls файлы")
+
+    # Сохраняем во временный файл
+    suffix = ".xlsx" if file.filename.endswith(".xlsx") else ".xls"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+
+    try:
+        result = diff_file(db, tmp_path, supplier_code)
+        # Сохраняем для шага confirm
+        session_key = f"{result['supplier_code']}:{result['file_name']}"
+        _pending_imports[session_key] = result
+        return {
+            "status": "preview_ready",
+            "session_key": session_key,
+            "supplier_code": result["supplier_code"],
+            "file_name": result["file_name"],
+            "summary": result["summary"],
+            "preview": result["preview"],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("upload_supplier_price error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        _os.unlink(tmp_path)
+
+
+@router.post("/suppliers/confirm", tags=["suppliers"])
+async def confirm_supplier_import(
+    body: ConfirmImportRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Подтвердить загрузку прайса после просмотра preview.
+    Применяет изменения в БД, сохраняет историю цен, пишет import_log.
+    """
+    session_key = f"{body.supplier_code}:{body.file_name}"
+    diff_result = _pending_imports.get(session_key)
+    if not diff_result:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Нет ожидающего импорта для '{session_key}'. Сначала вызовите /suppliers/upload.",
+        )
+    try:
+        log = confirm_import(db, diff_result, mark_deleted=body.mark_deleted)
+        _pending_imports.pop(session_key, None)
+        return {
+            "status": "confirmed",
+            "supplier_code": log.supplier_code,
+            "rows_new": log.rows_new,
+            "rows_updated": log.rows_updated,
+            "rows_deleted": log.rows_deleted,
+            "rows_unchanged": log.rows_unchanged,
+            "import_id": log.id,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/suppliers/import_log", tags=["suppliers"])
+async def get_import_log(
+    supplier_code: Optional[str] = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
+    """История загрузок прайсов."""
+    from sqlalchemy import select, desc
+    q = select(ImportLog).order_by(desc(ImportLog.imported_at)).limit(limit)
+    if supplier_code:
+        q = q.where(ImportLog.supplier_code == supplier_code)
+    rows = db.scalars(q).all()
+    return [
+        {
+            "id": r.id,
+            "supplier_code": r.supplier_code,
+            "file_name": r.file_name,
+            "rows_new": r.rows_new,
+            "rows_updated": r.rows_updated,
+            "rows_deleted": r.rows_deleted,
+            "status": r.status,
+            "imported_at": r.imported_at.isoformat() if r.imported_at else None,
+        }
+        for r in rows
+    ]

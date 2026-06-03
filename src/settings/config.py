@@ -40,6 +40,55 @@ def _get_system_prompt() -> str:
 AGENT_PROMPT = _get_system_prompt()
 MAX_HISTORY_LENGTH = 15
 
+# ─── Менеджеры ───────────────────────────────────────────────
+MANAGERS = [
+    {
+        "id": "director",
+        "name": "Ермекбаева Арна Ордаевна",
+        "role": "Руководитель",
+        "phone": "+77710010254",
+    },
+    {
+        "id": "kalbaeva",
+        "name": "Калбаева Диана Серикболовна",
+        "role": "Менеджер по продажам",
+        "phone": "+77750866676",
+    },
+    {
+        "id": "sabieva",
+        "name": "Сабиева Гульнара Джаксыкельдиновна",
+        "role": "Менеджер по продажам",
+        "phone": "+87711668284",
+    },
+    {
+        "id": "zhenibek",
+        "name": "Жиенбек Заманбек Манасбайұлы",
+        "role": "Менеджер по продажам",
+        "phone": "+87007718216",
+    },
+    {
+        "id": "dolakov",
+        "name": "Долаков Дауд Ибрагимович",
+        "role": "Менеджер по продажам",
+        "phone": "+87086110592",
+    },
+]
+
+# Telegram chat_id каждого менеджера (числовые ID или @username).
+# В тестовом режиме все сообщения идут на TELEGRAM_TEST_CHAT_ID.
+MANAGER_CHAT_IDS: dict = {
+    "director": os.getenv("TG_CHAT_ID_DIRECTOR", ""),
+    "kalbaeva": os.getenv("TG_CHAT_ID_KALBAEVA", ""),
+    "sabieva":  os.getenv("TG_CHAT_ID_SABIEVA", ""),
+    "zhenibek": os.getenv("TG_CHAT_ID_ZHENIBEK", ""),
+    "dolakov":  os.getenv("TG_CHAT_ID_DOLAKOV", ""),
+}
+
+# Тестовый режим: все уведомления идут на один чат (например @LoginZ_B).
+# Отключить, когда у каждого менеджера будет свой TG_CHAT_ID_*.
+TELEGRAM_TEST_MODE: bool = os.getenv("TELEGRAM_TEST_MODE", "true").lower() == "true"
+TELEGRAM_TEST_CHAT_ID: str = os.getenv("TELEGRAM_TEST_CHAT_ID", os.getenv("TELEGRAM_CHAT_ID", ""))
+
 
 class OpenAIModel(BaseModel):
     """Базовый класс для языковой модели OpenAI."""

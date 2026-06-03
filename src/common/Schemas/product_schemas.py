@@ -64,3 +64,11 @@ class Order(BaseModel):
     payment: str = Field(..., description="Метод оплаты")
     items: List[ItemOrder] = Field(..., min_items=1, description="Список позиций")
     comment: str = Field(..., description="Комментарий Срочно/несрочно")
+    manager_id: str = Field(
+        default="director",
+        description=(
+            "ID менеджера, которому направить заказ. "
+            "Значения: director | kalbaeva | sabieva | zhenibek | dolakov. "
+            "По умолчанию — director (руководитель)."
+        ),
+    )

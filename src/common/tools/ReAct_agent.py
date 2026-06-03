@@ -25,7 +25,13 @@ from src.db.CRUD import (
     get_brands_list,
 )
 from src.db.database import get_db
-from src.settings.config import AGENT_PROMPT
+from src.settings.config import (
+    AGENT_PROMPT,
+    MANAGERS,
+    MANAGER_CHAT_IDS,
+    TELEGRAM_TEST_MODE,
+    TELEGRAM_TEST_CHAT_ID,
+)
 
 load_dotenv()
 
@@ -227,6 +233,32 @@ def get_current_price(product_name: str):
     return get_product_price_by_name(db, product_name)
 
 
+def _resolve_manager_chat_id(manager_id: str) -> str:
+    """
+    В тестовом режиме — всегда возвращает TELEGRAM_TEST_CHAT_ID.
+    В продакшене — возвращает персональный chat_id менеджера или дефолтный TELEGRAM_CHAT_ID.
+    """
+    if TELEGRAM_TEST_MODE:
+        return TELEGRAM_TEST_CHAT_ID
+    chat_id = MANAGER_CHAT_IDS.get(manager_id, "")
+    if not chat_id:
+        # Фолбек: если chat_id не настроен — шлём в общую группу
+        import os
+        chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+    return chat_id
+
+
+@tool
+def list_managers() -> Any:
+    """
+    Возвращает список менеджеров компании для выбора клиентом.
+    Вызывай когда нужно предложить клиенту выбрать менеджера перед оформлением заказа.
+    Возвращает [{id, name, role, phone}].
+    """
+    return [{"id": m["id"], "name": m["name"], "role": m["role"], "phone": m["phone"]}
+            for m in MANAGERS]
+
+
 @tool(parse_docstring=True, args_schema=Order)
 def create_order(
     too_name: str,
@@ -237,10 +269,12 @@ def create_order(
     payment: str,
     items: List[ItemOrder],
     comment: str,
+    manager_id: str = "director",
 ) -> str:
     """
-    Сформировать текст заказа и отправить его в Telegram-группу.
+    Сформировать текст заказа и отправить менеджеру в Telegram личным сообщением.
     Требуются: Название ТОО, ФИО, Телефон, Адрес доставки, Дата доставки, Список позиций.
+    manager_id — ID выбранного менеджера (director/kalbaeva/sabieva/zhenibek/dolakov).
     """
     lines: List[str] = []
     counter = 1
@@ -262,8 +296,13 @@ def create_order(
     comment = comment or "несрочно"
     delivery = "бесплатно" if total_products > 50000 else "платная"
 
+    # Найти имя выбранного менеджера
+    manager_info = next((m for m in MANAGERS if m["id"] == manager_id), MANAGERS[0])
+    manager_name = manager_info["name"]
+
     order_text = (
         "🛒 <b>Новый заказ</b>\n\n"
+        f"<b>Менеджер:</b> {manager_name}\n"
         f"<b>Название ТОО:</b> {too_name}\n"
         f"<b>ФИО:</b> {client_name}\n"
         f"<b>Телефон:</b> {client_number}\n"
@@ -276,8 +315,9 @@ def create_order(
         f"<b>Комментарий:</b> {comment}"
     )
 
-    # Отправка в Telegram
-    sent = send_message_sync(order_text)
+    # Отправка менеджеру (личное сообщение или тестовый чат)
+    target_chat_id = _resolve_manager_chat_id(manager_id)
+    sent = send_message_sync(order_text, chat_id=target_chat_id)
     tg_status = "✅ Заказ отправлен менеджеру в Telegram." if sent else "⚠️ Не удалось отправить уведомление менеджеру."
 
     client_text = (
@@ -288,6 +328,7 @@ def create_order(
         f"Адрес доставки: {delivery_address}\n"
         f"Метод оплаты: {payment}\n"
         f"Дата доставки: {order_data}\n"
+        f"Менеджер: {manager_name}\n"
         f"Товары:\n{lines_str}\n\n"
         f"Итого к оплате: {total_products} тг\n"
         f"Доставка: {delivery}\n"
@@ -340,6 +381,7 @@ tools: List[BaseTool] = [
     search_by_articul,   # явный поиск по артикулу
     search_by_brand,     # поиск по бренду/производителю
     list_brands,         # список всех брендов в базе
+    list_managers,       # список менеджеров для выбора клиентом
     get_current_price,
     check_phone_number,
     create_order,
