@@ -10,9 +10,6 @@ load_dotenv()
 if not os.getenv("OPENAI_API_KEY"):
     raise ValueError("OPENAI_API_KEY not found in environment variables")
 
-if not os.getenv("PINECONE_API_KEY"):
-    raise ValueError("PINECONE_API_KEY not found in environment variables")
-
 if not os.getenv("API_TOKEN"):
     raise ValueError("API_TOKEN not found in environment variables")
 
