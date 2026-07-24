@@ -243,6 +243,16 @@ class ArticulVectorStore(_BaseVectorStore):
 
 
 # ─── Синглтоны ──────────────────────────────────────────────
+# Если PINECONE_API_KEY не задан — синглтоны будут None,
+# приложение запустится без векторного поиска.
 
-vector_store = NamesVectorStore()
-articul_store = ArticulVectorStore()
+try:
+    vector_store = NamesVectorStore()
+    articul_store = ArticulVectorStore()
+except Exception as e:
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "Pinecone недоступен, векторный поиск отключён: %s", e
+    )
+    vector_store = None
+    articul_store = None

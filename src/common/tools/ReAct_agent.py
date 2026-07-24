@@ -149,7 +149,9 @@ def search_by_name(product_name: str) -> Any:
     db_results = get_products_by_name(product_name)
     if db_results:
         return db_results
-    return vector_store.search(product_name)  # тоже возвращает List[dict]
+    if vector_store is None:
+        return []
+    return vector_store.search(product_name)
 
 
 @tool
@@ -173,6 +175,8 @@ def search_by_articul(articul: str) -> Any:
             "quantity": product.quantity,
         }]
     # Семантический поиск в векторном индексе артикулов
+    if articul_store is None:
+        return []
     return articul_store.search_articul(articul)
 
 
@@ -207,18 +211,21 @@ def smart_search(query: str) -> Any:
                         "quantity": product.quantity,
                     }]
                 }
-        vector_results = articul_store.search_articul(query)
-        return {"matched_as": "articul_vector", "results": vector_results}
+        if articul_store is not None:
+            vector_results = articul_store.search_articul(query)
+            return {"matched_as": "articul_vector", "results": vector_results}
+        return {"matched_as": "articul_vector", "results": []}
     else:
         for variant in variants:
             db_results = get_products_by_name(variant)
             if db_results:
                 return {"matched_as": "name_sql", "results": db_results, "variant_used": variant}
         # Векторный поиск по всем вариантам, берём лучший результат
-        for variant in variants:
-            vector_results = vector_store.search(variant)
-            if vector_results:
-                return {"matched_as": "name_vector", "results": vector_results, "variant_used": variant}
+        if vector_store is not None:
+            for variant in variants:
+                vector_results = vector_store.search(variant)
+                if vector_results:
+                    return {"matched_as": "name_vector", "results": vector_results, "variant_used": variant}
         return {"matched_as": "not_found", "results": []}
 
 
