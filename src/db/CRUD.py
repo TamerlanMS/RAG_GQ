@@ -15,9 +15,12 @@ from src.common.vector_store import articul_store, vector_store
 from src.db.database import Base, SessionLocal, engine, get_db
 from src.db.Models.product_models import Product
 # Импорт supplier-моделей необходим для регистрации в Base.metadata
-from src.db.Models.supplier_models import (  # noqa: F401
-    SupplierProduct, Supplier, ImportLog, PriceHistory, SupplierMapping,
-)
+try:
+    from src.db.Models.supplier_models import (  # noqa: F401
+        SupplierProduct, Supplier, ImportLog, PriceHistory, SupplierMapping,
+    )
+except ModuleNotFoundError:
+    pass
 
 # ---------- служебные операции ----------
 

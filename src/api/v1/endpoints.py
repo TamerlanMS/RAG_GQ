@@ -14,7 +14,10 @@ from src.common.Schemas.product_schemas import ProductCreate, ProductResponse, P
 from src.common.tools.ReAct_agent import agent
 from src.supplier_parser.importer import diff_file, confirm_import
 from src.supplier_parser.registry import list_suppliers
-from src.db.Models.supplier_models import ImportLog
+try:
+    from src.db.Models.supplier_models import ImportLog
+except ModuleNotFoundError:
+    ImportLog = None
 from src.db.CRUD import (
     create_db,
     create_product,
