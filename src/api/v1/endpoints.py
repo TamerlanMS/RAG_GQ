@@ -12,7 +12,7 @@ from starlette.requests import Request
 from src.common.logger import logger
 from src.common.Schemas.product_schemas import ProductCreate, ProductResponse, ProductUpdate
 from src.common.tools.ReAct_agent import agent
-from src.supplier_parser.importer import parse_file, diff_file, confirm_import
+from src.supplier_parser.importer import diff_file, confirm_import
 from src.supplier_parser.registry import list_suppliers
 from src.db.Models.supplier_models import ImportLog
 from src.db.CRUD import (

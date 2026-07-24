@@ -8,7 +8,7 @@ services:
       POSTGRES_DB: ${DB_NAME}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "5432:5432"
+      - "54321:5432"
     volumes:
       - ./pgdata:/var/lib/postgresql/data/pgdata
     deploy:
@@ -38,15 +38,17 @@ services:
 
   api:
     build: .
+    env_file:
+      - .env
+    environment:
+      # Переопределяем DB_HOST — внутри Docker сеть, имя сервиса "postgres"
+      - DB_HOST=postgres
+      - INTERNAL_API_URL=http://api:8000
     ports:
       - "80:8000"
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - PINECONE_API_KEY=${PINECONE_API_KEY}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      - TELEGRAM_INPUT_BOT_TOKEN=${TELEGRAM_INPUT_BOT_TOKEN}
-      - INTERNAL_API_URL=http://localhost:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - .:/app
     restart: unless-stopped
