@@ -26,12 +26,22 @@ from src.common.logger import logger
 from src.common.telegram_notifier import send_message_async
 
 # ─── Настройки ───────────────────────────────────────────────
-GUPSHUP_API_KEY: str    = os.getenv("GUPSHUP_API_KEY", "")
-GUPSHUP_APP_NAME: str   = os.getenv("GUPSHUP_APP_NAME", "GQGroup")
-GUPSHUP_SOURCE_PHONE: str = os.getenv("GUPSHUP_SOURCE_PHONE", "")
-GUPSHUP_VERIFY_TOKEN: str = os.getenv("GUPSHUP_VERIFY_TOKEN", "gqgroup_verify")
+def _env(name: str, default: str = "") -> str:
+    """os.getenv + срезание пробелов и \\r (защита от .env в формате CRLF)."""
+    return (os.getenv(name) or default).strip().strip("\r\n")
 
-OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+
+GUPSHUP_API_KEY: str    = _env("GUPSHUP_API_KEY")
+GUPSHUP_APP_NAME: str   = _env("GUPSHUP_APP_NAME", "GQGroup")
+GUPSHUP_SOURCE_PHONE: str = _env("GUPSHUP_SOURCE_PHONE")
+GUPSHUP_VERIFY_TOKEN: str = _env("GUPSHUP_VERIFY_TOKEN", "gqgroup_verify")
+
+if not GUPSHUP_API_KEY:
+    logger.warning("GUPSHUP_API_KEY пуст — исходящие сообщения WhatsApp отправляться не будут")
+if not GUPSHUP_SOURCE_PHONE:
+    logger.warning("GUPSHUP_SOURCE_PHONE пуст — исходящие сообщения WhatsApp отправляться не будут")
+
+OPENAI_API_KEY: str = _env("OPENAI_API_KEY")
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 
 GUPSHUP_SEND_URL = "https://api.gupshup.io/sm/api/v1/msg"
@@ -296,20 +306,33 @@ router = APIRouter(prefix="/whatsapp", tags=["WhatsApp"])
 @router.get("/webhook")
 async def verify_webhook(request: Request):
     """
-    Gupshup отправляет GET-запрос для верификации webhook.
-    Нужно вернуть hub.challenge как plain text.
+    Верификация webhook.
+
+    Два сценария:
+      1) Meta Cloud API — GET с hub.mode/hub.verify_token/hub.challenge:
+         возвращаем hub.challenge как plain text.
+      2) Gupshup при сохранении Callback URL просто дёргает URL и ждёт HTTP 200
+         без каких-либо параметров. Поэтому во всех остальных случаях
+         отвечаем 200 OK, иначе Gupshup считает URL невалидным.
     """
     params = dict(request.query_params)
     mode      = params.get("hub.mode")
     token     = params.get("hub.verify_token")
     challenge = params.get("hub.challenge")
 
-    if mode == "subscribe" and token == GUPSHUP_VERIFY_TOKEN:
-        logger.info("WhatsApp webhook verified")
-        return Response(content=challenge, media_type="text/plain")
+    if challenge is not None:
+        if mode == "subscribe" and token == GUPSHUP_VERIFY_TOKEN:
+            logger.info("WhatsApp webhook verified (hub.challenge)")
+            return Response(content=challenge, media_type="text/plain")
+        logger.warning(
+            "WhatsApp webhook verification failed: mode=%s token=%r (ожидался %r)",
+            mode, token, GUPSHUP_VERIFY_TOKEN,
+        )
+        return Response(content="Forbidden", status_code=403)
 
-    logger.warning("WhatsApp webhook verification failed: token=%s", token)
-    return Response(content="Forbidden", status_code=403)
+    # Health-check от Gupshup / ручная проверка из браузера
+    logger.info("WhatsApp webhook GET health-check, params=%s", params)
+    return Response(content="OK", media_type="text/plain", status_code=200)
 
 
 @router.post("/webhook")
@@ -318,17 +341,37 @@ async def receive_webhook(request: Request):
     Принимает события от Gupshup (Мета-формат v3).
     Немедленно возвращает 200, обрабатывает в фоне.
     """
+    raw = await request.body()
+    logger.info("Gupshup webhook IN: %s", raw.decode("utf-8", "replace")[:2000])
+
     try:
         body = await request.json()
-    except Exception:
+    except Exception as e:
+        logger.error("Gupshup webhook: невалидный JSON (%s)", e)
+        return Response(content="OK", status_code=200)
+
+    if not isinstance(body, dict):
+        logger.warning("Gupshup webhook: неожиданный тип payload: %s", type(body))
         return Response(content="OK", status_code=200)
 
     # Meta v3 структура: body.entry[].changes[].value.messages[]
     entries = body.get("entry", [])
+    if not entries:
+        logger.warning(
+            "Gupshup webhook: в payload нет entry[] — проверьте, что приложение "
+            "настроено в формате Meta Cloud API v3. Ключи payload: %s",
+            list(body.keys()),
+        )
+
     for entry in entries:
         for change in entry.get("changes", []):
             value = change.get("value", {})
             if change.get("field") != "messages":
+                logger.info("Gupshup webhook: пропущен field=%s", change.get("field"))
+                continue
+
+            # Статусы доставки (sent/delivered/read) приходят в том же field
+            if value.get("statuses") and not value.get("messages"):
                 continue
 
             contacts = value.get("contacts", [{}])
