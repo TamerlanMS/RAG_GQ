@@ -21,7 +21,7 @@ import random
 from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Request, Response
 from src.common.logger import logger
 from src.common.telegram_notifier import send_message_async
 
@@ -336,7 +336,7 @@ async def verify_webhook(request: Request):
 
 
 @router.post("/webhook")
-async def receive_webhook(request: Request):
+async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Принимает события от Gupshup (Мета-формат v3).
     Немедленно возвращает 200, обрабатывает в фоне.
@@ -402,7 +402,8 @@ async def receive_webhook(request: Request):
                     media_id = media.get("id", "")
 
                 # Запускаем обработку в фоне — не блокируем Gupshup
-                asyncio.create_task(_process_message(
+                background_tasks.add_task(
+                    _process_message,
                     phone=phone,
                     sender_name=sender_name,
                     msg_type=msg_type,
@@ -410,6 +411,6 @@ async def receive_webhook(request: Request):
                     caption=caption,
                     media_id=media_id,
                     file_name=file_name,
-                ))
+                )
 
     return Response(content="OK", status_code=200)
