@@ -44,7 +44,7 @@ if not GUPSHUP_SOURCE_PHONE:
 OPENAI_API_KEY: str = _env("OPENAI_API_KEY")
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 
-GUPSHUP_SEND_URL = "https://api.gupshup.io/sm/api/v1/msg"
+GUPSHUP_SEND_URL = "https://api.gupshup.io/wa/api/v1/msg"
 GUPSHUP_MEDIA_URL = "https://api.gupshup.io/wa/api/v1/msg/mediaUrl"
 
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "settings" / "system_prompt.txt"
