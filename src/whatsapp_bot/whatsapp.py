@@ -207,11 +207,13 @@ async def _process_message(
     Вся бизнес-логика: GPT → ответ клиенту → уведомление менеджера.
     Вызывается как asyncio.create_task из webhook-хендлера.
     """
+    logger.info("_process_message START phone=%s msg_type=%s text=%r", phone, msg_type, text_body[:50] if text_body else "")
     prompt_parts: list[str] = []
     vision_text = ""
 
-    # Небольшая задержка чтобы имитировать набор текста (опционально)
-    await asyncio.sleep(random.uniform(1.5, 3.0))
+    try:
+        # Небольшая задержка чтобы имитировать набор текста (опционально)
+        await asyncio.sleep(random.uniform(1.5, 3.0))
 
     if msg_type == "text" and text_body:
         prompt_parts.append(f"Клиент написал: {text_body}")
@@ -296,6 +298,8 @@ async def _process_message(
             f"Клиент: {sender_name} ({phone})\n"
             f"Сообщение: {text_body[:500]}"
         )
+    except Exception as e:
+        logger.error("_process_message UNHANDLED ERROR phone=%s: %s", phone, e, exc_info=True)
 
 
 # ─── FastAPI Router ───────────────────────────────────────────
