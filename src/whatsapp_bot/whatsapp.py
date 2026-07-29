@@ -208,96 +208,96 @@ async def _process_message(
     Вызывается как asyncio.create_task из webhook-хендлера.
     """
     logger.info("_process_message START phone=%s msg_type=%s text=%r", phone, msg_type, text_body[:50] if text_body else "")
-    prompt_parts: list[str] = []
-    vision_text = ""
-
     try:
+        prompt_parts: list[str] = []
+        vision_text = ""
+
         # Небольшая задержка чтобы имитировать набор текста (опционально)
         await asyncio.sleep(random.uniform(1.5, 3.0))
 
-    if msg_type == "text" and text_body:
-        prompt_parts.append(f"Клиент написал: {text_body}")
+        if msg_type == "text" and text_body:
+            prompt_parts.append(f"Клиент написал: {text_body}")
 
-    elif msg_type == "image" and media_id:
-        image_bytes = await _download_media(media_id)
-        if image_bytes:
-            try:
-                vision_text = await _gpt_vision(image_bytes, caption)
-                prompt_parts.append(
-                    f"Клиент прислал фото{f' с подписью «{caption}»' if caption else ''}. "
-                    f"Vision определил: {vision_text}"
-                )
-            except Exception as e:
-                logger.error("Vision error: %s", e)
-                prompt_parts.append(
-                    f"Клиент прислал фото{f' с подписью «{caption}»' if caption else ''}, "
-                    f"определить товар не удалось."
-                )
+        elif msg_type == "image" and media_id:
+            image_bytes = await _download_media(media_id)
+            if image_bytes:
+                try:
+                    vision_text = await _gpt_vision(image_bytes, caption)
+                    prompt_parts.append(
+                        f"Клиент прислал фото{f' с подписью «{caption}»' if caption else ''}. "
+                        f"Vision определил: {vision_text}"
+                    )
+                except Exception as e:
+                    logger.error("Vision error: %s", e)
+                    prompt_parts.append(
+                        f"Клиент прислал фото{f' с подписью «{caption}»' if caption else ''}, "
+                        f"определить товар не удалось."
+                    )
+            else:
+                prompt_parts.append("Клиент прислал фото, скачать не удалось.")
+
+        elif msg_type in ("document", "video", "audio", "voice"):
+            display = file_name or msg_type
+            prompt_parts.append(f"Клиент прислал файл: {display}")
+            answer = (
+                "📎 Получил ваш файл — передаю менеджеру для обработки.\n\n"
+                "Он свяжется с вами в течение рабочего дня."
+            )
+            await _send_whatsapp(phone, answer)
+            await send_message_async(
+                f"📎 <b>ФАЙЛ (WhatsApp)</b>\n"
+                f"Клиент: {sender_name} ({phone})\n"
+                f"Тип: {msg_type} | {display}"
+                + (f"\nПодпись: {caption}" if caption else "")
+            )
+            _add_to_history(phone, f"Клиент прислал файл: {display}", answer)
+            return
+
         else:
-            prompt_parts.append("Клиент прислал фото, скачать не удалось.")
+            prompt_parts.append("Клиент отправил сообщение без текста.")
 
-    elif msg_type in ("document", "video", "audio", "voice"):
-        display = file_name or msg_type
-        prompt_parts.append(f"Клиент прислал файл: {display}")
-        # Для файлов — фиксированный ответ + пересылка менеджеру
-        answer = (
-            "📎 Получил ваш файл — передаю менеджеру для обработки.\n\n"
-            "Он свяжется с вами в течение рабочего дня."
-        )
+        combined_prompt = "\n".join(prompt_parts)
+
+        # GPT-ответ
+        try:
+            answer = await _gpt_text(combined_prompt, phone)
+        except Exception as e:
+            logger.error("GPT error for phone %s: %s", phone, e)
+            answer = (
+                "Чтобы предоставить точную информацию, подключаю профильного специалиста. "
+                "Он свяжется с вами в ближайшее время."
+            )
+
+        # Отправляем ответ клиенту
         await _send_whatsapp(phone, answer)
-        await send_message_async(
-            f"📎 <b>ФАЙЛ (WhatsApp)</b>\n"
-            f"Клиент: {sender_name} ({phone})\n"
-            f"Тип: {msg_type} | {display}"
-            + (f"\nПодпись: {caption}" if caption else "")
-        )
-        _add_to_history(phone, f"Клиент прислал файл: {display}", answer)
-        return
+        _add_to_history(phone, combined_prompt, answer)
 
-    else:
-        prompt_parts.append("Клиент отправил сообщение без текста.")
+        # Уведомления менеджеру
+        escalated = _answer_escalates(answer)
+        triggered = _has_trigger(text_body or caption)
 
-    combined_prompt = "\n".join(prompt_parts)
+        if msg_type == "image":
+            await send_message_async(
+                f"📸 <b>ФОТО (WhatsApp)</b>\n"
+                f"Клиент: {sender_name} ({phone})"
+                + (f"\nПодпись: {caption}" if caption else "")
+                + (f"\nVision: {vision_text}" if vision_text else "\nVision: не определено")
+            )
 
-    # GPT-ответ
-    try:
-        answer = await _gpt_text(combined_prompt, phone)
-    except Exception as e:
-        logger.error("GPT error for phone %s: %s", phone, e)
-        answer = (
-            "Чтобы предоставить точную информацию, подключаю профильного специалиста. "
-            "Он свяжется с вами в ближайшее время."
-        )
+        if escalated:
+            await send_message_async(
+                f"🔔 <b>ЭСКАЛАЦИЯ (WhatsApp)</b>\n"
+                f"Клиент: {sender_name} ({phone})\n"
+                f"Сообщение клиента: {(text_body or caption)[:300]}\n"
+                f"Принял бот: {answer[:400]}"
+            )
+        elif triggered and text_body:
+            await send_message_async(
+                f"💬 <b>ОБРАЩЕНИЕ (WhatsApp)</b>\n"
+                f"Клиент: {sender_name} ({phone})\n"
+                f"Сообщение: {text_body[:500]}"
+            )
 
-    # Отправляем ответ клиенту
-    await _send_whatsapp(phone, answer)
-    _add_to_history(phone, combined_prompt, answer)
-
-    # Уведомления менеджеру
-    escalated = _answer_escalates(answer)
-    triggered = _has_trigger(text_body or caption)
-
-    if msg_type == "image":
-        await send_message_async(
-            f"📸 <b>ФОТО (WhatsApp)</b>\n"
-            f"Клиент: {sender_name} ({phone})"
-            + (f"\nПодпись: {caption}" if caption else "")
-            + (f"\nVision: {vision_text}" if vision_text else "\nVision: не определено")
-        )
-
-    if escalated:
-        await send_message_async(
-            f"🔔 <b>ЭСКАЛАЦИЯ (WhatsApp)</b>\n"
-            f"Клиент: {sender_name} ({phone})\n"
-            f"Сообщение клиента: {(text_body or caption)[:300]}\n"
-            f"Принял бот: {answer[:400]}"
-        )
-    elif triggered and text_body:
-        await send_message_async(
-            f"💬 <b>ОБРАЩЕНИЕ (WhatsApp)</b>\n"
-            f"Клиент: {sender_name} ({phone})\n"
-            f"Сообщение: {text_body[:500]}"
-        )
     except Exception as e:
         logger.error("_process_message UNHANDLED ERROR phone=%s: %s", phone, e, exc_info=True)
 
