@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
     await stop_bot()
 
 
-app = FastAPI(title="GQ API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="GQ API", version="0.1.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.include_router(endpoints.router, prefix="/api/v1")
 
 if _WHATSAPP_AVAILABLE:
