@@ -107,17 +107,21 @@ def _answer_escalates(answer: str) -> bool:
 # ─── GPT helpers ─────────────────────────────────────────────
 
 async def _gpt_text(prompt: str, phone: str) -> str:
+    from openai import AsyncOpenAI
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.extend(_get_history(phone))
     messages.append({"role": "user", "content": prompt})
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            OPENAI_API_URL,
-            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
-            json={"model": "gpt-4o", "messages": messages, "max_tokens": 600, "temperature": 0.3},
-        )
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
+    logger.info("_gpt_text calling OpenAI for phone=%s prompt_len=%d", phone, len(prompt))
+    client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+    response = await client.chat.completions.create(
+        model="gpt-4o",
+        messages=messages,
+        max_tokens=600,
+        temperature=0.3,
+    )
+    answer = response.choices[0].message.content.strip()
+    logger.info("_gpt_text got answer len=%d for phone=%s", len(answer), phone)
+    return answer
 
 
 async def _gpt_vision(image_bytes: bytes, caption: str = "") -> str:
