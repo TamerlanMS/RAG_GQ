@@ -180,17 +180,20 @@ async def _send_whatsapp(to_phone: str, text: str) -> None:
     import json
     try:
         async with httpx.AsyncClient(timeout=15) as client:
+            payload = {
+                "channel": "whatsapp",
+                "source": GUPSHUP_SOURCE_PHONE,
+                "destination": to_phone,
+                "src.name": GUPSHUP_APP_NAME,
+                "message": json.dumps({"type": "text", "text": text}),
+            }
+            logger.info("_send_whatsapp REQUEST to=%s source=%s app=%s", to_phone, GUPSHUP_SOURCE_PHONE, GUPSHUP_APP_NAME)
             resp = await client.post(
                 GUPSHUP_SEND_URL,
                 headers={"apikey": GUPSHUP_API_KEY, "Content-Type": "application/x-www-form-urlencoded"},
-                data={
-                    "channel": "whatsapp",
-                    "source": GUPSHUP_SOURCE_PHONE,
-                    "destination": to_phone,
-                    "src.name": GUPSHUP_APP_NAME,
-                    "message": json.dumps({"type": "text", "text": text}),
-                },
+                data=payload,
             )
+            logger.info("_send_whatsapp RESPONSE status=%s body=%s", resp.status_code, resp.text[:300])
             resp.raise_for_status()
     except Exception as e:
         logger.error("_send_whatsapp error (to=%s): %s", to_phone, e)
