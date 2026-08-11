@@ -214,6 +214,7 @@ async def _process_message(
 
         # Небольшая задержка чтобы имитировать набор текста (опционально)
         await asyncio.sleep(random.uniform(1.5, 3.0))
+        logger.info("_process_message after sleep, building prompt")
 
         if msg_type == "text" and text_body:
             prompt_parts.append(f"Клиент написал: {text_body}")
@@ -298,8 +299,8 @@ async def _process_message(
                 f"Сообщение: {text_body[:500]}"
             )
 
-    except Exception as e:
-        logger.error("_process_message UNHANDLED ERROR phone=%s: %s", phone, e, exc_info=True)
+    except BaseException as e:
+        logger.error("_process_message UNHANDLED ERROR phone=%s: %s (%s)", phone, e, type(e).__name__, exc_info=True)
 
 
 # ─── FastAPI Router ───────────────────────────────────────────
