@@ -127,6 +127,20 @@ def _has_trigger(text: str) -> bool:
     return any(kw in t for kw in _TRIGGER_KEYWORDS)
 
 
+def _fmt_phone(phone: str) -> str:
+    """77789392009 → +7 778 939 20 09"""
+    d = "".join(ch for ch in phone if ch.isdigit())
+    if len(d) == 11 and d[0] in "78":
+        return f"+7 {d[1:4]} {d[4:7]} {d[7:9]} {d[9:11]}"
+    return f"+{d}" if d else phone
+
+
+def _contact_line(sender_name: str, phone: str) -> str:
+    """Строка контакта с кликабельной ссылкой на чат в WhatsApp."""
+    d = "".join(ch for ch in phone if ch.isdigit())
+    return f'Клиент: {sender_name} — <a href="https://wa.me/{d}">{_fmt_phone(phone)}</a> (WhatsApp)'
+
+
 def _answer_escalates(answer: str) -> bool:
     a = answer.lower()
     return any(p in a for p in _ESCALATION_PHRASES)
@@ -310,7 +324,7 @@ async def _process_message(
                 await _send_whatsapp(phone, answer)
                 await send_message_async(
                     f"🔔 <b>ЗАПРОС МЕНЕДЖЕРА (WhatsApp)</b>\n"
-                    f"Клиент: {sender_name} ({phone})\n"
+                    + _contact_line(sender_name, phone) + "\n"
                     f"Нажал кнопку: Позвать менеджера"
                 )
                 _add_to_history(phone, "Клиент хочет связаться с менеджером", answer)
@@ -358,7 +372,7 @@ async def _process_message(
 
             cap = (
                 f"📎 <b>ФАЙЛ (WhatsApp)</b>\n"
-                f"Клиент: {sender_name} ({phone})\n"
+                + _contact_line(sender_name, phone) + "\n"
                 f"Тип: {msg_type} | {display}"
                 + (f"\nПодпись: {caption}" if caption else "")
             )
@@ -397,7 +411,7 @@ async def _process_message(
         if msg_type == "image":
             cap = (
                 f"📸 <b>ФОТО (WhatsApp)</b>\n"
-                f"Клиент: {sender_name} ({phone})"
+                + _contact_line(sender_name, phone) + ""
                 + (f"\nПодпись: {caption}" if caption else "")
                 + (f"\nVision: {vision_text}" if vision_text else "\nVision: не определено")
             )
@@ -409,14 +423,14 @@ async def _process_message(
         if escalated:
             await send_message_async(
                 f"🔔 <b>ЭСКАЛАЦИЯ (WhatsApp)</b>\n"
-                f"Клиент: {sender_name} ({phone})\n"
+                + _contact_line(sender_name, phone) + "\n"
                 f"Сообщение клиента: {(text_body or caption)[:300]}\n"
                 f"Принял бот: {answer[:400]}"
             )
         elif triggered and text_body:
             await send_message_async(
                 f"💬 <b>ОБРАЩЕНИЕ (WhatsApp)</b>\n"
-                f"Клиент: {sender_name} ({phone})\n"
+                + _contact_line(sender_name, phone) + "\n"
                 f"Сообщение: {text_body[:500]}"
             )
 

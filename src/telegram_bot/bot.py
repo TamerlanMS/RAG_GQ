@@ -164,12 +164,18 @@ def _username(message: Message) -> str:
     return f"@{u.username}" if u.username else f"tg_{u.id}"
 
 def _user_display(message: Message) -> str:
+    """Имя клиента + кликабельная ссылка на его профиль в Telegram."""
     u = message.from_user
     if not u:
         return "Клиент"
     parts = [u.first_name or "", u.last_name or ""]
     name = " ".join(p for p in parts if p).strip() or "Клиент"
-    return f"{name} ({_username(message)})"
+    if u.username:
+        link = f'<a href="https://t.me/{u.username}">@{u.username}</a>'
+    else:
+        # Без username — ссылка по id (работает у тех, кто уже писал боту)
+        link = f'<a href="tg://user?id={u.id}">написать</a> (id {u.id})'
+    return f"{name} — {link} (Telegram)"
 
 
 def _has_trigger(texts: list[str]) -> bool:
