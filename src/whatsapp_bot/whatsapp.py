@@ -50,6 +50,26 @@ GUPSHUP_MEDIA_URL = "https://api.gupshup.io/wa/api/v1/msg/mediaUrl"
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "settings" / "system_prompt.txt"
 SYSTEM_PROMPT: str = _PROMPT_PATH.read_text(encoding="utf-8") if _PROMPT_PATH.exists() else ""
 
+# ─── Приветственные кнопки ────────────────────────────────────
+WELCOME_TEXT = (
+    "Здравствуйте! 👋 Добро пожаловать в GQ Group!\n"
+    "Меня зовут Диана, я менеджер по работе с клиентами. "
+    "Спасибо за обращение. Помогу вам чем смогу!\n\n"
+    "Выберите интересующий вас раздел:"
+)
+
+_WELCOME_BUTTONS = [
+    {"type": "reply", "reply": {"id": "kp_electro", "title": "⚡ КП по электрике"}},
+    {"type": "reply", "reply": {"id": "kp_slabot",  "title": "📡 КП по слаботочке"}},
+    {"type": "reply", "reply": {"id": "manager",    "title": "👤 Позвать менеджера"}},
+]
+
+# prompt, который уйдёт в GPT при нажатии кнопки
+_BUTTON_PROMPTS: dict[str, str] = {
+    "kp_electro": "Клиент хочет получить коммерческое предложение по электрике. Помоги ему уточнить детали.",
+    "kp_slabot":  "Клиент хочет получить коммерческое предложение по слаботочным системам (СКС, СВН, СКУД). Помоги ему уточнить детали.",
+}
+
 # ─── История диалога (per WhatsApp user) ─────────────────────
 MAX_HISTORY_PAIRS = 10
 _wa_history: dict[str, list[dict]] = {}  # key = phone number string
@@ -199,6 +219,35 @@ async def _send_whatsapp(to_phone: str, text: str) -> None:
         logger.error("_send_whatsapp error (to=%s): %s", to_phone, e)
 
 
+async def _send_whatsapp_buttons(to_phone: str, body_text: str, buttons: list[dict]) -> None:
+    """Отправить интерактивное сообщение с reply-кнопками (до 3 штук)."""
+    import json
+    try:
+        message = {
+            "type": "button",
+            "body": {"text": body_text},
+            "buttons": buttons,
+        }
+        async with httpx.AsyncClient(timeout=15) as client:
+            payload = {
+                "channel": "whatsapp",
+                "source": GUPSHUP_SOURCE_PHONE,
+                "destination": to_phone,
+                "src.name": GUPSHUP_APP_NAME,
+                "message": json.dumps(message),
+            }
+            logger.info("_send_whatsapp_buttons REQUEST to=%s", to_phone)
+            resp = await client.post(
+                GUPSHUP_SEND_URL,
+                headers={"apikey": GUPSHUP_API_KEY, "Content-Type": "application/x-www-form-urlencoded"},
+                data=payload,
+            )
+            logger.info("_send_whatsapp_buttons RESPONSE status=%s body=%s", resp.status_code, resp.text[:300])
+            resp.raise_for_status()
+    except Exception as e:
+        logger.error("_send_whatsapp_buttons error (to=%s): %s", to_phone, e)
+
+
 # ─── Обработка входящего сообщения ───────────────────────────
 
 async def _process_message(
@@ -209,19 +258,44 @@ async def _process_message(
     caption: str,
     media_id: str,
     file_name: str,
+    button_id: str = "",
 ) -> None:
     """
     Вся бизнес-логика: GPT → ответ клиенту → уведомление менеджера.
     Вызывается как asyncio.create_task из webhook-хендлера.
     """
-    logger.info("_process_message START phone=%s msg_type=%s text=%r", phone, msg_type, text_body[:50] if text_body else "")
+    logger.info("_process_message START phone=%s msg_type=%s text=%r button_id=%r", phone, msg_type, text_body[:50] if text_body else "", button_id)
     try:
+        # ── Первый контакт: показываем меню с кнопками ──────────
+        if not _get_history(phone) and msg_type == "text":
+            await asyncio.sleep(random.uniform(1.0, 2.0))
+            await _send_whatsapp_buttons(phone, WELCOME_TEXT, _WELCOME_BUTTONS)
+            return
+
+        # ── Нажатие кнопки-кнопки ────────────────────────────────
+        if msg_type == "interactive" and button_id:
+            if button_id == "manager":
+                answer = (
+                    "Понял! Передаю ваш запрос менеджеру. "
+                    "Он свяжется с вами в ближайшее время. 🤝"
+                )
+                await _send_whatsapp(phone, answer)
+                await send_message_async(
+                    f"🔔 <b>ЗАПРОС МЕНЕДЖЕРА (WhatsApp)</b>\n"
+                    f"Клиент: {sender_name} ({phone})\n"
+                    f"Нажал кнопку: Позвать менеджера"
+                )
+                _add_to_history(phone, "Клиент хочет связаться с менеджером", answer)
+                return
+            # kp_electro / kp_slabot → подставляем готовый prompt
+            text_body = _BUTTON_PROMPTS.get(button_id, text_body)
+            msg_type = "text"
+
         prompt_parts: list[str] = []
         vision_text = ""
 
         # Небольшая задержка чтобы имитировать набор текста (опционально)
         await asyncio.sleep(random.uniform(1.5, 3.0))
-        logger.info("_process_message after sleep, building prompt")
 
         if msg_type == "text" and text_body:
             prompt_parts.append(f"Клиент написал: {text_body}")
@@ -396,6 +470,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                 caption   = ""
                 media_id  = ""
                 file_name = ""
+                button_id = ""
 
                 if msg_type == "image":
                     img = msg.get("image", {})
@@ -413,6 +488,18 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                     caption  = media.get("caption", "")
                     media_id = media.get("id", "")
 
+                elif msg_type == "interactive":
+                    interactive = msg.get("interactive", {})
+                    i_type = interactive.get("type", "")
+                    if i_type == "button_reply":
+                        btn = interactive.get("button_reply", {})
+                        button_id = btn.get("id", "")
+                        text_body = btn.get("title", "")
+                    elif i_type == "list_reply":
+                        item = interactive.get("list_reply", {})
+                        button_id = item.get("id", "")
+                        text_body = item.get("title", "")
+
                 # Запускаем обработку в фоне — не блокируем Gupshup
                 background_tasks.add_task(
                     _process_message,
@@ -423,6 +510,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                     caption=caption,
                     media_id=media_id,
                     file_name=file_name,
+                    button_id=button_id,
                 )
 
     return Response(content="OK", status_code=200)
