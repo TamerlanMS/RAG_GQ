@@ -117,6 +117,56 @@ async def send_file_to_group(
         return False
 
 
+async def send_bytes_to_group(
+    file_bytes: bytes,
+    file_name: str,
+    media_type: str,
+    caption: str = "",
+    chat_id: str | None = None,
+) -> bool:
+    """
+    Загрузить произвольные байты в группу менеджеров (для WhatsApp-файлов).
+
+    media_type: image | document | video | audio | voice
+    """
+    token = TELEGRAM_BOT_TOKEN
+    target = chat_id or TELEGRAM_CHAT_ID
+    if not token or not target:
+        logger.error("send_bytes_to_group: creds missing token=%s chat=%s", bool(token), bool(target))
+        return False
+
+    method, field = {
+        "image":    ("sendPhoto",    "photo"),
+        "document": ("sendDocument", "document"),
+        "video":    ("sendVideo",    "video"),
+        "audio":    ("sendAudio",    "audio"),
+        "voice":    ("sendVoice",    "voice"),
+    }.get(media_type, ("sendDocument", "document"))
+
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                f"https://api.telegram.org/bot{token}/{method}",
+                data={"chat_id": target, "caption": caption[:1024], "parse_mode": "HTML"},
+                files={field: (file_name, file_bytes)},
+            )
+            if resp.status_code != 200:
+                logger.error("send_bytes_to_group %s failed: %s", method, resp.text[:300])
+                # Фолбэк: фото могло не пройти по размеру/формату — шлём документом
+                if method != "sendDocument":
+                    resp = await client.post(
+                        f"https://api.telegram.org/bot{token}/sendDocument",
+                        data={"chat_id": target, "caption": caption[:1024], "parse_mode": "HTML"},
+                        files={"document": (file_name, file_bytes)},
+                    )
+            resp.raise_for_status()
+            logger.info("send_bytes_to_group OK: %s (%s, %d bytes)", file_name, media_type, len(file_bytes))
+            return True
+    except Exception as e:
+        logger.error("send_bytes_to_group error: %s", e, exc_info=True)
+        return False
+
+
 def send_message_sync(text: str, chat_id: str | None = None) -> bool:
     """Sync send (works in ThreadPoolExecutor / LangGraph tools)."""
     token = TELEGRAM_BOT_TOKEN

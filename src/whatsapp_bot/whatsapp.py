@@ -23,7 +23,7 @@ from pathlib import Path
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Request, Response
 from src.common.logger import logger
-from src.common.telegram_notifier import send_message_async
+from src.common.telegram_notifier import send_bytes_to_group, send_message_async
 
 # ─── Настройки ───────────────────────────────────────────────
 def _env(name: str, default: str = "") -> str:
@@ -177,27 +177,39 @@ async def _gpt_vision(image_bytes: bytes, caption: str = "") -> str:
         return resp.json()["choices"][0]["message"]["content"].strip()
 
 
-async def _download_media(media_id: str) -> bytes | None:
-    """Скачивает медиафайл через Gupshup Media API."""
+async def _download_media(media_id: str, media_url: str = "") -> bytes | None:
+    """Скачивает медиафайл: по прямой ссылке из вебхука либо через Gupshup Media API."""
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            # Сначала получаем URL файла
+        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+            # Вариант 1 — прямая ссылка пришла в вебхуке
+            if media_url:
+                logger.info("_download_media direct url=%s", media_url[:120])
+                r = await client.get(media_url, headers={"apikey": GUPSHUP_API_KEY})
+                if r.status_code == 200:
+                    return r.content
+                logger.warning("_download_media direct url failed: %s", r.status_code)
+
+            if not media_id:
+                return None
+
+            # Вариант 2 — резолвим ссылку через Gupshup Media API
+            logger.info("_download_media resolving id=%s", media_id)
             r = await client.get(
                 f"{GUPSHUP_MEDIA_URL}/{media_id}",
                 headers={"apikey": GUPSHUP_API_KEY},
             )
+            logger.info("_download_media mediaUrl status=%s body=%s", r.status_code, r.text[:300])
             r.raise_for_status()
             data = r.json()
-            media_url = data.get("message", {}).get("url") or data.get("url")
-            if not media_url:
+            resolved = data.get("message", {}).get("url") or data.get("url")
+            if not resolved:
                 logger.error("No media URL in Gupshup response: %s", data)
                 return None
-            # Скачиваем сам файл
-            r2 = await client.get(media_url)
+            r2 = await client.get(resolved)
             r2.raise_for_status()
             return r2.content
     except Exception as e:
-        logger.error("_download_media error: %s", e)
+        logger.error("_download_media error: %s", e, exc_info=True)
         return None
 
 
@@ -272,6 +284,7 @@ async def _process_message(
     media_id: str,
     file_name: str,
     button_id: str = "",
+    media_url: str = "",
 ) -> None:
     """
     Вся бизнес-логика: GPT → ответ клиенту → уведомление менеджера.
@@ -308,6 +321,7 @@ async def _process_message(
 
         prompt_parts: list[str] = []
         vision_text = ""
+        image_bytes: bytes | None = None
 
         # Небольшая задержка чтобы имитировать набор текста (опционально)
         await asyncio.sleep(random.uniform(1.5, 3.0))
@@ -315,8 +329,8 @@ async def _process_message(
         if msg_type == "text" and text_body:
             prompt_parts.append(f"Клиент написал: {text_body}")
 
-        elif msg_type == "image" and media_id:
-            image_bytes = await _download_media(media_id)
+        elif msg_type == "image" and (media_id or media_url):
+            image_bytes = await _download_media(media_id, media_url)
             if image_bytes:
                 try:
                     vision_text = await _gpt_vision(image_bytes, caption)
@@ -341,12 +355,19 @@ async def _process_message(
                 "Он свяжется с вами в течение рабочего дня."
             )
             await _send_whatsapp(phone, answer)
-            await send_message_async(
+
+            cap = (
                 f"📎 <b>ФАЙЛ (WhatsApp)</b>\n"
                 f"Клиент: {sender_name} ({phone})\n"
                 f"Тип: {msg_type} | {display}"
                 + (f"\nПодпись: {caption}" if caption else "")
             )
+            file_bytes = await _download_media(media_id, media_url)
+            if file_bytes:
+                await send_bytes_to_group(file_bytes, display, msg_type, cap)
+            else:
+                await send_message_async(cap + "\n\n⚠️ Скачать файл не удалось")
+
             _add_to_history(phone, f"Клиент прислал файл: {display}", answer)
             return
 
@@ -374,12 +395,16 @@ async def _process_message(
         triggered = _has_trigger(text_body or caption)
 
         if msg_type == "image":
-            await send_message_async(
+            cap = (
                 f"📸 <b>ФОТО (WhatsApp)</b>\n"
                 f"Клиент: {sender_name} ({phone})"
                 + (f"\nПодпись: {caption}" if caption else "")
                 + (f"\nVision: {vision_text}" if vision_text else "\nVision: не определено")
             )
+            if image_bytes:
+                await send_bytes_to_group(image_bytes, "photo.jpg", "image", cap)
+            else:
+                await send_message_async(cap)
 
         if escalated:
             await send_message_async(
@@ -486,22 +511,26 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                 media_id  = ""
                 file_name = ""
                 button_id = ""
+                media_url = ""
 
                 if msg_type == "image":
                     img = msg.get("image", {})
-                    caption  = img.get("caption", "")
-                    media_id = img.get("id", "")
+                    caption   = img.get("caption", "")
+                    media_id  = img.get("id", "")
+                    media_url = img.get("url", "")
 
                 elif msg_type == "document":
                     doc = msg.get("document", {})
                     caption   = doc.get("caption", "")
                     media_id  = doc.get("id", "")
+                    media_url = doc.get("url", "")
                     file_name = doc.get("filename", "файл")
 
                 elif msg_type in ("video", "audio", "voice"):
                     media = msg.get(msg_type, {})
-                    caption  = media.get("caption", "")
-                    media_id = media.get("id", "")
+                    caption   = media.get("caption", "")
+                    media_id  = media.get("id", "")
+                    media_url = media.get("url", "")
 
                 elif msg_type == "interactive":
                     interactive = msg.get("interactive", {})
@@ -535,6 +564,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                     media_id=media_id,
                     file_name=file_name,
                     button_id=button_id,
+                    media_url=media_url,
                 )
 
     return Response(content="OK", status_code=200)
