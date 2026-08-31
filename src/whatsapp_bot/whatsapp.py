@@ -59,10 +59,17 @@ WELCOME_TEXT = (
 )
 
 _WELCOME_BUTTONS = [
-    {"type": "reply", "reply": {"id": "kp_electro", "title": "⚡ КП по электрике"}},
-    {"type": "reply", "reply": {"id": "kp_slabot",  "title": "📡 КП по слаботочке"}},
-    {"type": "reply", "reply": {"id": "manager",    "title": "👤 Позвать менеджера"}},
+    {"type": "text", "title": "⚡ КП по электрике"},
+    {"type": "text", "title": "📡 КП по слаботочке"},
+    {"type": "text", "title": "👤 Позвать менеджера"},
 ]
+
+# Соответствие заголовка кнопки → внутренний id
+_BUTTON_TITLE_TO_ID: dict[str, str] = {
+    "⚡ КП по электрике":   "kp_electro",
+    "📡 КП по слаботочке":  "kp_slabot",
+    "👤 Позвать менеджера": "manager",
+}
 
 # prompt, который уйдёт в GPT при нажатии кнопки
 _BUTTON_PROMPTS: dict[str, str] = {
@@ -73,6 +80,7 @@ _BUTTON_PROMPTS: dict[str, str] = {
 # ─── История диалога (per WhatsApp user) ─────────────────────
 MAX_HISTORY_PAIRS = 10
 _wa_history: dict[str, list[dict]] = {}  # key = phone number string
+_greeted: set[str] = set()  # телефоны, которым уже показали приветственное меню
 
 
 def _get_history(phone: str) -> list[dict]:
@@ -220,13 +228,18 @@ async def _send_whatsapp(to_phone: str, text: str) -> None:
 
 
 async def _send_whatsapp_buttons(to_phone: str, body_text: str, buttons: list[dict]) -> None:
-    """Отправить интерактивное сообщение с reply-кнопками (до 3 штук)."""
+    """Отправить интерактивное сообщение с quick-reply кнопками (до 3 штук).
+
+    Формат Gupshup: type=quick_reply, content{type,text}, options[{type,title}].
+    """
     import json
+    import uuid
     try:
         message = {
-            "type": "button",
-            "body": {"text": body_text},
-            "buttons": buttons,
+            "type": "quick_reply",
+            "msgid": str(uuid.uuid4())[:8],
+            "content": {"type": "text", "text": body_text},
+            "options": buttons,
         }
         async with httpx.AsyncClient(timeout=15) as client:
             payload = {
@@ -267,13 +280,15 @@ async def _process_message(
     logger.info("_process_message START phone=%s msg_type=%s text=%r button_id=%r", phone, msg_type, text_body[:50] if text_body else "", button_id)
     try:
         # ── Первый контакт: показываем меню с кнопками ──────────
-        if not _get_history(phone) and msg_type == "text":
+        if not button_id and phone not in _greeted and msg_type == "text":
+            _greeted.add(phone)
             await asyncio.sleep(random.uniform(1.0, 2.0))
             await _send_whatsapp_buttons(phone, WELCOME_TEXT, _WELCOME_BUTTONS)
             return
 
-        # ── Нажатие кнопки-кнопки ────────────────────────────────
-        if msg_type == "interactive" and button_id:
+        # ── Нажатие кнопки ───────────────────────────────────────
+        if button_id:
+            _greeted.add(phone)
             if button_id == "manager":
                 answer = (
                     "Понял! Передаю ваш запрос менеджеру. "
@@ -499,6 +514,15 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                         item = interactive.get("list_reply", {})
                         button_id = item.get("id", "")
                         text_body = item.get("title", "")
+
+                elif msg_type == "button":
+                    # Ответ на quick_reply приходит как type=button
+                    btn = msg.get("button", {})
+                    text_body = btn.get("text", "") or btn.get("payload", "")
+
+                # Фолбэк: определяем кнопку по её заголовку
+                if not button_id and text_body:
+                    button_id = _BUTTON_TITLE_TO_ID.get(text_body.strip(), "")
 
                 # Запускаем обработку в фоне — не блокируем Gupshup
                 background_tasks.add_task(
