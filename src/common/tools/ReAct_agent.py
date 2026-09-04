@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from typing import Annotated, Any, List, Optional, Sequence, TypedDict
 
 from dotenv import load_dotenv
@@ -12,6 +11,7 @@ from langgraph.prebuilt import ToolNode
 from datetime import datetime, timezone as dt_timezone, timedelta
 
 from src.common.llm_model import LLM
+from src.common.phone import normalize_phone
 from src.common.Schemas.product_schemas import ItemOrder, Order
 from src.common.vector_store import articul_store, is_articul, vector_store
 from src.common.telegram_notifier import send_message_sync
@@ -126,16 +126,9 @@ def check_phone_number(phone_number: str) -> Optional[str]:
     Приводит номер к формату +7XXXXXXXXXX.
     Возвращает нормализованный номер или None.
     """
-    cleaned = re.sub(r"[^\d+]", "", phone_number)
-    if cleaned.startswith("+7"):
-        number = cleaned[2:]
-    elif cleaned.startswith("8"):
-        number = cleaned[1:]
-    else:
-        return None
-    if len(number) == 10 and number.isdigit():
-        return f"+7{number}"
-    return None
+    # Реализация вынесена в src/common/phone.py — она же используется
+    # при входе менеджера в веб-консоль, дублировать её нельзя.
+    return normalize_phone(phone_number)
 
 
 @tool

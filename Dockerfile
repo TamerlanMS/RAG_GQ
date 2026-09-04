@@ -1,3 +1,13 @@
+# ── Стадия 1: сборка веб-консоли менеджеров (React + Vite) ──
+FROM node:20-alpine AS frontend
+WORKDIR /build
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+
+# ── Стадия 2: приложение ─────────────────────────────────────
 # Use Python 3.10 slim image as base
 FROM python:3.10-slim
 
@@ -27,6 +37,11 @@ RUN pip install --no-cache-dir aiogram httpx openpyxl
 
 # Copy the rest of the application
 COPY . .
+
+# Собранная консоль кладётся в /srv — ВНЕ /app, который перекрывается
+# bind-mount'ом из docker-compose (volumes: - .:/app).
+COPY --from=frontend /build/dist /srv/console
+ENV CONSOLE_DIST_DIR=/srv/console
 
 # Add src directory to PYTHONPATH
 ENV PYTHONPATH=/app

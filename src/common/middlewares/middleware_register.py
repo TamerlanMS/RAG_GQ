@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from typing import Callable, Awaitable
 
@@ -66,13 +67,29 @@ async def log_new_request_middleware(
 
 
 def register_middlewares(app: FastAPI) -> None:
-    app.middleware("http")(log_new_request_middleware)
-    # app.middleware("http")(debug_middleware)
+    # ВНИМАНИЕ: log_new_request_middleware намеренно НЕ подключён.
+    # При logger.setLevel(DEBUG) он делегирует в debug_middleware, который
+    # вычитывает response.body_iterator целиком и пересобирает Response. Это
+    #   (а) ломает StreamingResponse/FileResponse — то есть раздачу веб-консоли;
+    #   (б) пишет тела всех ответов в logs/app.log, включая JWT из /console/login
+    #       и всю переписку клиентов из /console/chats/{id}/messages.
+    # Если понадобится логирование запросов — включать только INFO-ветку.
+    # app.middleware("http")(log_new_request_middleware)
 
+    # allow_origins=["*"] вместе с allow_credentials=True браузеры отвергают
+    # по спецификации — такая настройка не «нестрогая», она нерабочая.
+    # Здесь: явный список origin-ов, credentials не нужны (токен идёт заголовком).
+    origins = [
+        o.strip()
+        for o in os.getenv(
+            "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+        ).split(",")
+        if o.strip()
+    ]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
     )

@@ -18,6 +18,8 @@ sqlalchemy = "^2.0.41"
 alembic = "^1.16.4"
 asyncpg = "^0.30.0"
 psycopg = {extras = ["binary"], version = "^3.2.9"}
+pyjwt = "^2.9.0"
+bcrypt = "^4.2.0"
 
 
 [tool.poetry.group.dev.dependencies]

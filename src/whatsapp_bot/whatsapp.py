@@ -22,8 +22,11 @@ from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Request, Response
+from src.common import chat_store
 from src.common.logger import logger
+from src.common.phone import normalize_phone
 from src.common.telegram_notifier import send_bytes_to_group, send_message_async
+from src.db.Models.chat_models import CHANNEL_WHATSAPP
 
 # ─── Настройки ───────────────────────────────────────────────
 def _env(name: str, default: str = "") -> str:
@@ -43,6 +46,12 @@ if not GUPSHUP_SOURCE_PHONE:
 
 OPENAI_API_KEY: str = _env("OPENAI_API_KEY")
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+
+# Режим разработки: не дёргать Gupshup, но писать исходящие в веб-консоль.
+# Без него на машине без GUPSHUP_API_KEY в консоли видны только входящие.
+WHATSAPP_DRY_RUN: bool = _env("WHATSAPP_DRY_RUN", "false").lower() == "true"
+if WHATSAPP_DRY_RUN:
+    logger.warning("WHATSAPP_DRY_RUN включён — исходящие НЕ уходят клиенту, только пишутся в консоль")
 
 GUPSHUP_SEND_URL = "https://api.gupshup.io/wa/api/v1/msg"
 GUPSHUP_MEDIA_URL = "https://api.gupshup.io/wa/api/v1/msg/mediaUrl"
@@ -227,11 +236,56 @@ async def _download_media(media_id: str, media_url: str = "") -> bytes | None:
         return None
 
 
+# ─── Зеркалирование в веб-консоль ────────────────────────────
+
+async def _persist_outgoing(
+    to_phone: str,
+    text: str,
+    msg_type: str,
+    author: str | None,
+    manager_id: int | None,
+    extra: dict | None = None,
+) -> int | None:
+    """
+    Записать исходящее сообщение в веб-консоль. Вызывается только после успешной отправки.
+    Возвращает id записи — по нему консоль отличает доставленное от несостоявшегося.
+    """
+    if not author:
+        return None
+    return await chat_store.save_message(
+        channel=CHANNEL_WHATSAPP,
+        external_id=to_phone,
+        direction="out",
+        author=author,
+        author_manager_id=manager_id,
+        text_body=text,
+        msg_type=msg_type,
+        extra=extra,
+    )
+
+
 # ─── Gupshup Send API ────────────────────────────────────────
 
-async def _send_whatsapp(to_phone: str, text: str) -> None:
-    """Отправить текстовое сообщение клиенту через Gupshup."""
+async def _send_whatsapp(
+    to_phone: str,
+    text: str,
+    *,
+    persist_author: str | None = "bot",
+    persist_manager_id: int | None = None,
+) -> int | None:
+    """
+    Отправить текстовое сообщение клиенту через Gupshup.
+
+    persist_author — кем записать сообщение в веб-консоль ("bot" | "manager"),
+    None отключает запись. Запись выполняется ТОЛЬКО после успешной отправки:
+    консоль не должна показывать доставленным то, что не доставлено.
+    """
     import json
+
+    if WHATSAPP_DRY_RUN:
+        logger.info("[DRY-RUN] _send_whatsapp to=%s text=%r", to_phone, text[:200])
+        return await _persist_outgoing(to_phone, text, "text", persist_author, persist_manager_id)
+
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             payload = {
@@ -249,8 +303,10 @@ async def _send_whatsapp(to_phone: str, text: str) -> None:
             )
             logger.info("_send_whatsapp RESPONSE status=%s body=%s", resp.status_code, resp.text[:300])
             resp.raise_for_status()
+            return await _persist_outgoing(to_phone, text, "text", persist_author, persist_manager_id)
     except Exception as e:
         logger.error("_send_whatsapp error (to=%s): %s", to_phone, e)
+        return None
 
 
 async def _send_whatsapp_buttons(to_phone: str, body_text: str, buttons: list[dict]) -> None:
@@ -260,6 +316,15 @@ async def _send_whatsapp_buttons(to_phone: str, body_text: str, buttons: list[di
     """
     import json
     import uuid
+
+    if WHATSAPP_DRY_RUN:
+        logger.info("[DRY-RUN] _send_whatsapp_buttons to=%s text=%r", to_phone, body_text[:200])
+        await _persist_outgoing(
+            to_phone, body_text, "button", "bot", None,
+            extra={"buttons": [b.get("title") for b in buttons]},
+        )
+        return
+
     try:
         message = {
             "type": "quick_reply",
@@ -283,6 +348,10 @@ async def _send_whatsapp_buttons(to_phone: str, body_text: str, buttons: list[di
             )
             logger.info("_send_whatsapp_buttons RESPONSE status=%s body=%s", resp.status_code, resp.text[:300])
             resp.raise_for_status()
+            await _persist_outgoing(
+                to_phone, body_text, "button", "bot", None,
+                extra={"buttons": [b.get("title") for b in buttons]},
+            )
     except Exception as e:
         logger.error("_send_whatsapp_buttons error (to=%s): %s", to_phone, e)
 
@@ -299,6 +368,7 @@ async def _process_message(
     file_name: str,
     button_id: str = "",
     media_url: str = "",
+    msg_id: str = "",
 ) -> None:
     """
     Вся бизнес-логика: GPT → ответ клиенту → уведомление менеджера.
@@ -306,6 +376,33 @@ async def _process_message(
     """
     logger.info("_process_message START phone=%s msg_type=%s text=%r button_id=%r", phone, msg_type, text_body[:50] if text_body else "", button_id)
     try:
+        # ── Зеркалирование входящего в веб-консоль ──────────────
+        # Стоит ДО всех ветвлений: одна вставка покрывает и приветствие,
+        # и нажатие кнопки, и файл, и основной путь.
+        await chat_store.save_message(
+            channel=CHANNEL_WHATSAPP,
+            external_id=phone,
+            direction="in",
+            author="client",
+            text_body=(text_body or caption or ""),
+            msg_type=("button" if button_id else msg_type),
+            file_name=(file_name or None),
+            media_url=(media_url or None),
+            external_msg_id=(msg_id or None),
+            display_name=sender_name,
+            phone=normalize_phone(phone),
+            extra=({"button_id": button_id} if button_id else None),
+            bump_unread=True,
+        )
+
+        # ── Перехват: менеджер ведёт диалог сам, бот молчит ─────
+        if await chat_store.is_taken_over(CHANNEL_WHATSAPP, phone):
+            # Обязательно: иначе после /release клиент снова попадёт в ветку
+            # «первый контакт» ниже и получит приветственное меню посреди диалога.
+            _greeted.add(phone)
+            logger.info("_process_message: чат %s перехвачен менеджером — бот не отвечает", phone)
+            return
+
         # ── Первый контакт: показываем меню с кнопками ──────────
         if not button_id and phone not in _greeted and msg_type == "text":
             _greeted.add(phone)
@@ -519,6 +616,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
 
             for msg in value.get("messages", []):
                 phone    = msg.get("from", "")
+                msg_id   = msg.get("id", "")   # wamid — идемпотентность при переотправке
                 msg_type = msg.get("type", "text")
                 text_body = msg.get("text", {}).get("body", "")
                 caption   = ""
@@ -579,6 +677,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                     file_name=file_name,
                     button_id=button_id,
                     media_url=media_url,
+                    msg_id=msg_id,
                 )
 
     return Response(content="OK", status_code=200)
