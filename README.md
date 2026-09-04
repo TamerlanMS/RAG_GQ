@@ -1,4 +1,4 @@
-# RAG GMZ
+# RAG GQ
 ### 1. To deploy the project on an Ubuntu server, install Docker and Docker Compose.
 ### 2. Copy repository on it.
 ### 3. Create .env with credentials from .env.example
