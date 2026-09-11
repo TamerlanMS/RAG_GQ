@@ -2,6 +2,7 @@
 """Системные сообщения при перехвате/возврате + регрессия основного API."""
 from __future__ import annotations
 
+import os
 import time
 import uuid
 
@@ -10,6 +11,7 @@ from sqlalchemy import text as sqltext
 
 BASE = "http://localhost:8000"
 API = BASE + "/api/v1/console"
+WEBHOOK_TOKEN = os.getenv("GUPSHUP_VERIFY_TOKEN", "gqgroup_verify")
 _res = []
 
 
@@ -43,13 +45,15 @@ def qall(sql, **p):
         s.close()
 
 
-def webhook(phone, body, name="Клиент"):
+def webhook(phone, body, name="Клиент", token=None):
     mid = "wamid." + uuid.uuid4().hex[:12]
-    httpx.post(BASE + "/api/v1/whatsapp/webhook", timeout=25, json={"entry": [{"changes": [{
+    r = httpx.post(BASE + "/api/v1/whatsapp/webhook",
+                   params={"token": WEBHOOK_TOKEN if token is None else token},
+                   timeout=25, json={"entry": [{"changes": [{
         "field": "messages", "value": {
             "contacts": [{"profile": {"name": name}, "wa_id": phone}],
             "messages": [{"from": phone, "id": mid, "type": "text", "text": {"body": body}}]}}]}]})
-    return mid
+    return mid, r.status_code
 
 
 def wait_for(fn, timeout=30):
@@ -118,6 +122,35 @@ r = httpx.get(f"{API}/chats/{cid}/messages", headers=HK, timeout=25).json()
 sys_out = [m for m in r["items"] if m["author"] == "system"]
 check("системные сообщения видны в API", len(sys_out) == 3, f"{len(sys_out)}")
 check("у системного msg_type=system", all(m["msg_type"] == "system" for m in sys_out))
+
+section("11b. ЗАЩИТА ВЕБХУКА WHATSAPP")
+
+P_TOK = "77066660006"
+_s = db()
+try:
+    _s.execute(sqltext("DELETE FROM chat_messages WHERE chat_id IN "
+                       "(SELECT id FROM chats WHERE external_id=:p)"), {"p": P_TOK})
+    _s.execute(sqltext("DELETE FROM chats WHERE external_id=:p"), {"p": P_TOK})
+    _s.commit()
+finally:
+    _s.close()
+
+_, status_no_token = webhook(P_TOK, "Без токена", token="")
+check("POST без token -> 200 OK (не выдаём наличие проверки)", status_no_token == 200,
+      f"HTTP {status_no_token}")
+check("но сообщение НЕ записано",
+      q1("SELECT count(*) FROM chats WHERE external_id=:p", p=P_TOK) == 0)
+
+_, status_wrong_token = webhook(P_TOK, "Неверный токен", token="wrong-token-value")
+check("POST с неверным token -> тоже 200 OK", status_wrong_token == 200,
+      f"HTTP {status_wrong_token}")
+check("сообщение всё ещё НЕ записано",
+      q1("SELECT count(*) FROM chats WHERE external_id=:p", p=P_TOK) == 0)
+
+_, status_ok = webhook(P_TOK, "С верным токеном")
+check("POST с верным token -> 200 OK", status_ok == 200, f"HTTP {status_ok}")
+ok = wait_for(lambda: q1("SELECT count(*) FROM chats WHERE external_id=:p", p=P_TOK) == 1)
+check("с верным токеном сообщение записывается как обычно", ok)
 
 section("12. РЕГРЕССИЯ: существующие эндпоинты не сломаны")
 

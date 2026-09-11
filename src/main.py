@@ -1,3 +1,4 @@
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -6,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from src.api.v1 import console, endpoints
+from src.common import chat_store
 from src.common.logger import logger
 from src.common.middlewares import register_middlewares
 from src.db.chat_database import ChatBase, chat_engine, ensure_chat_database
@@ -28,13 +30,41 @@ except ModuleNotFoundError:
     _WHATSAPP_AVAILABLE = False
 
 
+# Каждые сколько секунд проверять зависшие перехваты — 20 минут не требуют
+# секундной точности, минута между проверками достаточна.
+_TAKEOVER_CHECK_INTERVAL_SECONDS = 60
+
+
+async def _takeover_watchdog() -> None:
+    """
+    Фоновый цикл: периодически возвращает боту диалоги, где менеджер
+    не отвечал клиенту дольше TAKEOVER_AUTO_RELEASE_MINUTES
+    (src/common/chat_store.py). Первая проверка — сразу при старте,
+    чтобы подхватить перехваты, зависшие, пока приложение было выключено.
+    """
+    while True:
+        try:
+            await chat_store.release_stale_takeovers()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error("_takeover_watchdog: неожиданная ошибка: %s", e, exc_info=True)
+        await asyncio.sleep(_TAKEOVER_CHECK_INTERVAL_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     ensure_chat_database()
     ChatBase.metadata.create_all(bind=chat_engine)
     Base.metadata.create_all(bind=engine)
     await start_bot()
+    watchdog_task = asyncio.create_task(_takeover_watchdog())
     yield
+    watchdog_task.cancel()
+    try:
+        await watchdog_task
+    except asyncio.CancelledError:
+        pass
     await stop_bot()
 
 

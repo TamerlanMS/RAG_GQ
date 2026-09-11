@@ -115,3 +115,20 @@ class ActionResponse(BaseModel):
     status: str
     chat: ChatOut
     message: Optional[MessageOut] = None
+
+
+# ─── Статистика по заявкам (только для директора) ─────────────
+
+class ManagerStatEntry(BaseModel):
+    manager_id: int
+    manager_name: str
+    chats_handled: int = Field(..., description="Заявок за период, где менеджер ответил хотя бы раз")
+
+
+class StatsResponse(BaseModel):
+    period_from: datetime
+    period_to: datetime
+    total_chats: int = Field(..., description="Заявок (диалогов), созданных за период")
+    unread_chats: int = Field(..., description="Из них — с непрочитанными сообщениями сейчас")
+    never_replied_chats: int = Field(..., description="Из них — без единого ответа менеджера")
+    by_manager: List[ManagerStatEntry]

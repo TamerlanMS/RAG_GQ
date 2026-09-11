@@ -97,4 +97,15 @@ export const api = {
   release: (chatId) => request(`/chats/${chatId}/release`, { method: "POST" }),
 
   markRead: (chatId) => request(`/chats/${chatId}/read`, { method: "POST" }),
+
+  stats: ({ period = "week", dateFrom = null, dateTo = null } = {}) => {
+    const p = new URLSearchParams();
+    if (dateFrom || dateTo) {
+      if (dateFrom) p.set("date_from", dateFrom);
+      if (dateTo) p.set("date_to", dateTo);
+    } else {
+      p.set("period", period);
+    }
+    return request(`/stats?${p}`);
+  },
 };

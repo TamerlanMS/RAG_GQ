@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import hmac
 import os
 import time
 from datetime import datetime, timedelta, timezone
@@ -17,7 +18,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -119,6 +120,49 @@ def get_current_manager(
     if manager is None or not manager.is_active:
         raise unauthorized
     return manager
+
+
+def require_director(manager: Manager = Depends(get_current_manager)) -> Manager:
+    """
+    Статистика по заявкам — только для директора.
+
+    Проверяем по code, а не по role: code — стабильный идентификатор
+    (см. src/db/Models/manager_models.py), а role — по сути отображаемый
+    текст ("Руководитель"/"Менеджер по продажам") и теоретически может
+    быть отредактирован без намерения менять права доступа.
+    """
+    if manager.code != "director":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Доступно только руководителю",
+        )
+    return manager
+
+
+# ─── Сервисный доступ (для /update_DB) ────────────────────────
+# Массовый импорт прайса обычно гоняют скриптом или по крону, а не из
+# залогиненного браузера — отдельный токен в заголовке, в дополнение к
+# обычному входу менеджера.
+
+SERVICE_API_TOKEN: str = os.getenv("SERVICE_API_TOKEN", "")
+
+
+def require_manager_or_service_token(
+    request: Request,
+    cred: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
+    db: Session = Depends(get_chat_db),
+) -> None:
+    """
+    Пускает либо запрос с верным X-Service-Token, либо вошедшего менеджера.
+
+    Если SERVICE_API_TOKEN не задан в .env, первая ветка никогда не
+    сработает (пустая строка не проходит `if SERVICE_API_TOKEN`) — маршрут
+    ведёт себя как manager-only, пока сервисный токен не включат явно.
+    """
+    provided = request.headers.get("X-Service-Token", "")
+    if SERVICE_API_TOKEN and hmac.compare_digest(provided, SERVICE_API_TOKEN):
+        return
+    get_current_manager(cred=cred, db=db)  # бросит HTTPException сама при неудаче
 
 
 # ─── Ограничение перебора на логине ──────────────────────────

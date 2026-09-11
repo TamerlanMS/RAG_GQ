@@ -57,8 +57,12 @@ def main() -> int:
     }
 
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    # Вебхук требует ?token=<GUPSHUP_VERIFY_TOKEN> — тот же секрет, что в .env
+    # приложения. Дефолт совпадает с дефолтом в src/whatsapp_bot/whatsapp.py.
+    verify_token = os.getenv("GUPSHUP_VERIFY_TOKEN", "gqgroup_verify")
+    url = f"{args.url.rstrip('/')}/api/v1/whatsapp/webhook?token={verify_token}"
     req = request.Request(
-        args.url.rstrip("/") + "/api/v1/whatsapp/webhook",
+        url,
         data=body,
         headers={"Content-Type": "application/json; charset=utf-8"},
         method="POST",

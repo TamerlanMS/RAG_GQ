@@ -9,9 +9,11 @@ from sqlalchemy.orm import Session
 from starlette import status
 from starlette.requests import Request
 
+from src.common.auth import get_current_manager, require_manager_or_service_token
 from src.common.logger import logger
 from src.common.Schemas.product_schemas import ProductCreate, ProductResponse, ProductUpdate
 from src.common.tools.ReAct_agent import agent
+from src.db.Models.manager_models import Manager
 try:
     from src.supplier_parser.importer import diff_file, confirm_import
     from src.supplier_parser.registry import list_suppliers
@@ -45,7 +47,7 @@ class AskRequest(BaseModel):
 
 
 @router.post("/ask", tags=["Agent"])
-async def ask_agent(body: AskRequest) -> Any:
+async def ask_agent(body: AskRequest, _: Manager = Depends(get_current_manager)) -> Any:
     """
     Отправить сообщение агенту.
     История диалога хранится по номеру телефона (thread_id).
@@ -99,7 +101,7 @@ async def get_postgres_db_status(
 
 
 @router.post("/create_DB", tags=["database"])
-async def create_tables() -> Dict[str, Any]:
+async def create_tables(_: Manager = Depends(get_current_manager)) -> Dict[str, Any]:
     """Создаёт таблицы при необходимости."""
     try:
         message = create_db()
@@ -114,6 +116,7 @@ async def create_tables() -> Dict[str, Any]:
 async def update_products(
     payload: Optional[dict] = Body(default=None),
     db: Session = Depends(get_db),
+    _: None = Depends(require_manager_or_service_token),
 ) -> Dict[str, Any]:
     """
     Массовый upsert товаров.
@@ -147,12 +150,12 @@ async def update_products(
         )
 
 @router.delete("/drop_DB", tags=["delete DB"])
-async def delete_db() -> Dict[str, Any]:
+async def delete_db(_: Manager = Depends(get_current_manager)) -> Dict[str, Any]:
     message = drop_db()
     return {"status_code": 201, "message": f"{message}"}
 
 @router.post("/cleanup_spaces", tags=["database"])
-async def cleanup_spaces() -> Dict[str, Any]:
+async def cleanup_spaces(_: Manager = Depends(get_current_manager)) -> Dict[str, Any]:
     """Обрезает пробелы в начале/конце строк во всех полях таблицы products."""
     try:
         trimmed = cleanup_db_spaces()
@@ -192,6 +195,7 @@ async def get_product(
 async def create_product_endpoint(
     body: ProductCreate,
     db: Session = Depends(get_db),
+    _: Manager = Depends(get_current_manager),
 ):
     """Создать новый товар."""
     try:
@@ -208,6 +212,7 @@ async def update_product_endpoint(
     product_id: int = Path(..., description="ID товара"),
     body: ProductUpdate = Body(...),
     db: Session = Depends(get_db),
+    _: Manager = Depends(get_current_manager),
 ):
     """Обновить поля товара (частичное обновление)."""
     product = update_product(db, product_id, body.model_dump(exclude_none=True))
@@ -220,6 +225,7 @@ async def update_product_endpoint(
 async def delete_product_endpoint(
     product_id: int = Path(..., description="ID товара"),
     db: Session = Depends(get_db),
+    _: Manager = Depends(get_current_manager),
 ):
     """Удалить товар по ID."""
     deleted = delete_product(db, product_id)
@@ -253,6 +259,7 @@ async def upload_supplier_price(
     file: UploadFile = File(...),
     supplier_code: Optional[str] = None,
     db: Session = Depends(get_db),
+    _: Manager = Depends(get_current_manager),
 ):
     """
     Загрузить прайс-лист поставщика (.xlsx).
@@ -297,6 +304,7 @@ async def upload_supplier_price(
 async def confirm_supplier_import(
     body: ConfirmImportRequest,
     db: Session = Depends(get_db),
+    _: Manager = Depends(get_current_manager),
 ):
     """
     Подтвердить загрузку прайса после просмотра preview.
@@ -330,6 +338,7 @@ async def get_import_log(
     supplier_code: Optional[str] = None,
     limit: int = 50,
     db: Session = Depends(get_db),
+    _: Manager = Depends(get_current_manager),
 ):
     """История загрузок прайсов."""
     from sqlalchemy import select, desc

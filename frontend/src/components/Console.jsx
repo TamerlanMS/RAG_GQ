@@ -5,12 +5,18 @@ import { usePolling } from "../hooks/usePolling.js";
 import { ChatList } from "./ChatList.jsx";
 import { Composer } from "./Composer.jsx";
 import { MessageThread } from "./MessageThread.jsx";
+import { Stats } from "./Stats.jsx";
 import { initials } from "../format.js";
 
 const CHATS_INTERVAL_MS = 5000;
 const MESSAGES_INTERVAL_MS = 3000;
 
 export function Console({ manager, onLogout }) {
+  // Совпадает с проверкой на бэкенде (require_director в src/common/auth.py):
+  // code — стабильный идентификатор, а не отображаемая роль.
+  const isDirector = manager.code === "director";
+  const [view, setView] = useState("chats"); // "chats" | "stats"
+
   const [chats, setChats] = useState([]);
   const [chatsError, setChatsError] = useState("");
   const [query, setQuery] = useState("");
@@ -164,6 +170,15 @@ export function Console({ manager, onLogout }) {
       <header className="topbar">
         <div className="topbar-brand">GQ Group · консоль менеджера</div>
         <div className="topbar-user">
+          {isDirector && (
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => setView(view === "stats" ? "chats" : "stats")}
+            >
+              {view === "stats" ? "Диалоги" : "Статистика"}
+            </button>
+          )}
           <span className="avatar avatar-sm">{initials(manager.name)}</span>
           <span className="topbar-name">{manager.name}</span>
           <button type="button" className="btn-ghost" onClick={logout}>
@@ -172,6 +187,9 @@ export function Console({ manager, onLogout }) {
         </div>
       </header>
 
+      {view === "stats" && isDirector ? (
+        <Stats onBack={() => setView("chats")} />
+      ) : (
       <div className="layout">
         <ChatList
           chats={chats}
@@ -228,6 +246,7 @@ export function Console({ manager, onLogout }) {
           )}
         </main>
       </div>
+      )}
     </div>
   );
 }

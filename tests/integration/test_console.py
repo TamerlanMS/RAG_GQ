@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 import uuid
@@ -15,6 +16,9 @@ from sqlalchemy import text as sqltext
 
 BASE = "http://localhost:8000"
 API = BASE + "/api/v1/console"
+# Вебхук требует ?token=<GUPSHUP_VERIFY_TOKEN> — дефолт совпадает с
+# дефолтом в src/whatsapp_bot/whatsapp.py.
+WEBHOOK_TOKEN = os.getenv("GUPSHUP_VERIFY_TOKEN", "gqgroup_verify")
 
 PASSWORDS = {}  # code -> password, заполняется сидированием
 
@@ -68,7 +72,8 @@ def webhook(phone, body, wamid=None, name="Тест Клиент", mtype="text",
     payload = {"entry": [{"changes": [{"field": "messages", "value": {
         "contacts": [{"profile": {"name": name}, "wa_id": phone}],
         "messages": [msg]}}]}]}
-    r = httpx.post(BASE + "/api/v1/whatsapp/webhook", json=payload, timeout=20)
+    r = httpx.post(BASE + "/api/v1/whatsapp/webhook", params={"token": WEBHOOK_TOKEN},
+                   json=payload, timeout=20)
     return r.status_code, msg["id"]
 
 
@@ -189,7 +194,6 @@ check("токен с чужой подписью -> 401",
       httpx.get(API + "/me", headers=auth(forged), timeout=20).status_code == 401)
 
 # Истёкший токен, подписанный правильным секретом
-import os  # noqa: E402
 expired = pyjwt.encode({"sub": "1", "exp": int(time.time()) - 10}, os.getenv("API_TOKEN", ""),
                        algorithm="HS256")
 re_exp = httpx.get(API + "/me", headers=auth(expired), timeout=20)

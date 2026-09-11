@@ -2,6 +2,7 @@
 """Часть 3: API чатов, перехват, ответ, гейт бота."""
 from __future__ import annotations
 
+import os
 import time
 import uuid
 
@@ -10,6 +11,7 @@ from sqlalchemy import text as sqltext
 
 BASE = "http://localhost:8000"
 API = BASE + "/api/v1/console"
+WEBHOOK_TOKEN = os.getenv("GUPSHUP_VERIFY_TOKEN", "gqgroup_verify")
 _results = []
 
 PW = {"director": "TestPass_director_123", "sabieva": "TestPass_sabieva_123",
@@ -52,7 +54,8 @@ def webhook(phone, body="", wamid=None, name="Клиент"):
     payload = {"entry": [{"changes": [{"field": "messages", "value": {
         "contacts": [{"profile": {"name": name}, "wa_id": phone}],
         "messages": [{"from": phone, "id": mid, "type": "text", "text": {"body": body}}]}}]}]}
-    httpx.post(BASE + "/api/v1/whatsapp/webhook", json=payload, timeout=25)
+    httpx.post(BASE + "/api/v1/whatsapp/webhook", params={"token": WEBHOOK_TOKEN},
+              json=payload, timeout=25)
     return mid
 
 

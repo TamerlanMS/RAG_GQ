@@ -7,7 +7,8 @@ API менеджерской веб-консоли.
 """
 from __future__ import annotations
 
-from typing import Optional
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_, select
@@ -21,6 +22,7 @@ from src.common.auth import (
     get_current_manager,
     hash_password,
     register_failed_login,
+    require_director,
     reset_login_attempts,
     verify_password,
 )
@@ -33,15 +35,17 @@ from src.common.Schemas.console_schemas import (
     LoginRequest,
     LoginResponse,
     ManagerOut,
+    ManagerStatEntry,
     MessageListResponse,
     MessageOut,
     PasswordChangeRequest,
     ReplyRequest,
+    StatsResponse,
     TakenOverBy,
     TakeoverRequest,
 )
 from src.db.chat_database import get_chat_db
-from src.db.Models.chat_models import AUTHOR_SYSTEM, CHANNEL_WHATSAPP, Chat, ChatMessage
+from src.db.Models.chat_models import AUTHOR_MANAGER, AUTHOR_SYSTEM, CHANNEL_WHATSAPP, Chat, ChatMessage
 from src.db.Models.manager_models import Manager
 
 router: APIRouter = APIRouter(prefix="/console")
@@ -360,6 +364,11 @@ async def reply_to_chat(
         chat.taken_over_by_id = manager.id
         chat.taken_over_at = func.now()
         _system_message(db, chat.id, f"Менеджер {manager.name} подключился к диалогу")
+    elif chat.is_taken_over:
+        # Диалог уже за этим менеджером — освежаем taken_over_at: он же служит
+        # временем последней активности для таймера автовозврата
+        # (chat_store.release_stale_takeovers, TAKEOVER_AUTO_RELEASE_MINUTES).
+        chat.taken_over_at = func.now()
     db.commit()
 
     # Отправка — вне транзакции. Запись сообщения делает сам транспортный хелпер
@@ -396,4 +405,108 @@ async def reply_to_chat(
         status="sent",
         chat=_chat_out(chat, manager if chat.is_taken_over else None),
         message=_message_out(msg, manager.name) if msg else None,
+    )
+
+
+# ──────────────────── Статистика (только директор) ──────────── #
+# "Заявка" в этой статистике = диалог (Chat). Ничего нового в БД не заводим —
+# считаем по уже существующим chats/chat_messages.
+
+_STATS_EPOCH = datetime(2020, 1, 1, tzinfo=timezone.utc)  # синоним «без нижней границы» для period=all
+
+
+def _parse_stat_date(raw: str, *, end_of_day: bool = False) -> datetime:
+    try:
+        d = datetime.strptime(raw, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Неверный формат даты: {raw!r}, ожидается YYYY-MM-DD",
+        )
+    d = d.replace(tzinfo=timezone.utc)
+    return d + timedelta(days=1) - timedelta(microseconds=1) if end_of_day else d
+
+
+def _stats_period_bounds(
+    period: str, date_from: Optional[str], date_to: Optional[str]
+) -> Tuple[datetime, datetime]:
+    """date_from/date_to (хотя бы один) переопределяют period; иначе — скользящее окно."""
+    now = datetime.now(timezone.utc)
+    if date_from or date_to:
+        start = _parse_stat_date(date_from) if date_from else _STATS_EPOCH
+        end = _parse_stat_date(date_to, end_of_day=True) if date_to else now
+        return start, end
+    starts = {
+        "today": now.replace(hour=0, minute=0, second=0, microsecond=0),
+        "week": now - timedelta(days=7),
+        "month": now - timedelta(days=30),
+        "all": _STATS_EPOCH,
+    }
+    return starts.get(period, now - timedelta(days=7)), now
+
+
+@router.get("/stats", response_model=StatsResponse, tags=["console"])
+def get_stats(
+    period: str = Query(default="week", description="today | week | month | all"),
+    date_from: Optional[str] = Query(default=None, description="YYYY-MM-DD, переопределяет period"),
+    date_to: Optional[str] = Query(default=None, description="YYYY-MM-DD, переопределяет period"),
+    _: Manager = Depends(require_director),
+    db: Session = Depends(get_chat_db),
+) -> StatsResponse:
+    """
+    Статистика по заявкам за период: сколько всего, сколько без ответа/непрочитанных,
+    и сколько заявок обработал каждый менеджер. Доступно только руководителю.
+    """
+    start, end = _stats_period_bounds(period, date_from, date_to)
+
+    in_period = (Chat.created_at >= start, Chat.created_at <= end)
+
+    total_chats = int(
+        db.execute(select(func.count()).select_from(Chat).where(*in_period)).scalar_one()
+    )
+
+    unread_chats = int(
+        db.execute(
+            select(func.count()).select_from(Chat).where(*in_period, Chat.unread_count > 0)
+        ).scalar_one()
+    )
+
+    replied_chat_ids = select(ChatMessage.chat_id).where(ChatMessage.author == AUTHOR_MANAGER)
+    never_replied_chats = int(
+        db.execute(
+            select(func.count()).select_from(Chat).where(
+                *in_period, Chat.id.notin_(replied_chat_ids)
+            )
+        ).scalar_one()
+    )
+
+    # По менеджерам: сколько РАЗНЫХ заявок за период каждый обработал (ответил хотя бы раз).
+    # LEFT JOIN дважды, чтобы менеджеры без единого ответа тоже попали в выдачу с нулём —
+    # директору важно видеть и тех, кто ничего не обработал.
+    counted = aliased(Chat)
+    by_manager_rows = db.execute(
+        select(Manager.id, Manager.name, func.count(func.distinct(counted.id)).label("chats_handled"))
+        .select_from(Manager)
+        .outerjoin(
+            ChatMessage,
+            (ChatMessage.author_manager_id == Manager.id) & (ChatMessage.author == AUTHOR_MANAGER),
+        )
+        .outerjoin(
+            counted,
+            (counted.id == ChatMessage.chat_id) & (counted.created_at >= start) & (counted.created_at <= end),
+        )
+        .group_by(Manager.id, Manager.name)
+        .order_by(func.count(func.distinct(counted.id)).desc(), Manager.name)
+    ).all()
+
+    return StatsResponse(
+        period_from=start,
+        period_to=end,
+        total_chats=total_chats,
+        unread_chats=unread_chats,
+        never_replied_chats=never_replied_chats,
+        by_manager=[
+            ManagerStatEntry(manager_id=r[0], manager_name=r[1], chats_handled=int(r[2]))
+            for r in by_manager_rows
+        ],
     )

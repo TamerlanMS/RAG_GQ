@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hmac
 import os
 import random
 from pathlib import Path
@@ -43,6 +44,11 @@ if not GUPSHUP_API_KEY:
     logger.warning("GUPSHUP_API_KEY пуст — исходящие сообщения WhatsApp отправляться не будут")
 if not GUPSHUP_SOURCE_PHONE:
     logger.warning("GUPSHUP_SOURCE_PHONE пуст — исходящие сообщения WhatsApp отправляться не будут")
+if GUPSHUP_VERIFY_TOKEN == "gqgroup_verify":
+    logger.warning(
+        "GUPSHUP_VERIFY_TOKEN использует дефолтное значение — оно угадываемо. "
+        "Задайте случайный секрет в .env и обновите Callback URL в кабинете Gupshup."
+    )
 
 OPENAI_API_KEY: str = _env("OPENAI_API_KEY")
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
@@ -578,6 +584,15 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
     Принимает события от Gupshup (Мета-формат v3).
     Немедленно возвращает 200, обрабатывает в фоне.
     """
+    # Секрет в query-параметре ?token=... — тот же GUPSHUP_VERIFY_TOKEN, что
+    # используется для GET-верификации. 200 OK на несовпадении (не 403):
+    # не подсказывать сканеру, что URL живой, и не провоцировать Gupshup
+    # на повторные попытки после «ошибки».
+    provided_token = request.query_params.get("token", "")
+    if not hmac.compare_digest(provided_token, GUPSHUP_VERIFY_TOKEN):
+        logger.warning("Gupshup webhook: неверный или отсутствующий token в query — запрос отклонён")
+        return Response(content="OK", status_code=200)
+
     raw = await request.body()
     logger.info("Gupshup webhook IN: %s", raw.decode("utf-8", "replace")[:2000])
 

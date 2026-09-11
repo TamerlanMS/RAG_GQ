@@ -113,6 +113,15 @@ A React+Vite SPA in `frontend/` that mirrors WhatsApp conversations for managers
 - **Takeover gates the bot.** `Chat.is_taken_over` is checked in `_process_message` right after the
   inbound insert; when set, the bot returns early (and adds the phone to `_greeted`, or releasing the
   chat would re-trigger the first-contact welcome menu mid-conversation).
+- **Takeover auto-releases after `TAKEOVER_AUTO_RELEASE_MINUTES`** (default 20) **of manager
+  inactivity.** `Chat.taken_over_at` does double duty: `POST /chats/{id}/takeover` sets it, and
+  `POST /chats/{id}/reply` in `console.py` re-stamps it on every successful send — so it's really
+  "last manager activity," not just "moment of takeover" (repurposed rather than adding a column,
+  since `create_all` never runs `ALTER TABLE`). A background loop in `main.py`'s `lifespan`
+  (`_takeover_watchdog`, checks every 60s) calls `chat_store.release_stale_takeovers()`, which clears
+  `is_taken_over` on anything past the cutoff and drops a system message naming who went quiet. The
+  first check runs immediately at startup, so takeovers that went stale while the container was down
+  get swept right away.
 
 `src/common/chat_store.py` is the only writer. Its sync core runs via `asyncio.to_thread` (SQLAlchemy is
 sync here, and the loop already hosts aiogram polling plus 30-45s OpenAI calls), every path is wrapped so
@@ -126,9 +135,43 @@ self-heals across restarts and survives a topology change. Auth is bcrypt + JWT 
 seed managers with `docker compose exec api python scripts/seed_managers.py`.
 
 Phone normalization lives in `src/common/phone.py` (`normalize_phone`) and is the single source of
-truth — `check_phone_number` in `ReAct_agent.py` delegates to it. Do not reimplement it: three of the
-five phones in `config.MANAGERS` are written as `+8…`, and the old inline version returned `None` for
-all of them plus for raw Gupshup numbers.
+truth — `check_phone_number` in `ReAct_agent.py` delegates to it. Do not reimplement it: the old inline
+version silently returned `None` for the `+8…`-style numbers some managers had and for raw Gupshup
+numbers; `config.MANAGERS` phones are now stored in canonical `+7…` form.
+
+**`GET /console/stats` is director-only** — the first (and so far only) role check in the codebase.
+`require_director` (`src/common/auth.py`) compares `manager.code == "director"`, not `manager.role`:
+`code` is the stable slug from `config.MANAGERS`, while `role` is display text ("Руководитель") that
+could be edited without meaning to change permissions. The frontend mirrors the same check
+(`manager.code === "director"` in `Console.jsx`) to hide the "Статистика" button/tab entirely for
+everyone else — the API check is what actually enforces it, the UI check just avoids showing a
+control that would 403. A "заявка" (request) here is just a `Chat` row — no new table. Stats are
+computed live over `chats`/`chat_messages` for a period (`today`/`week`/`month`/`all`, or explicit
+`date_from`/`date_to` overriding it): total chats created, how many still have `unread_count > 0`,
+how many have zero `ChatMessage` rows with `author='manager'` ("never replied"), and a per-manager
+breakdown of distinct chats each replied in — built with a double `LEFT JOIN` so managers with zero
+activity still show up with `0` rather than being absent from the list.
+
+### Auth on `endpoints.py` and the WhatsApp webhook
+
+All mutating/expensive routes in `src/api/v1/endpoints.py` require `Depends(get_current_manager)`
+(same JWT as the console): `/ask`, `/create_DB`, `/drop_DB`, `/cleanup_spaces`, the three `/products`
+mutations, and all three `/suppliers/*` routes. Read-only routes (`/status_DB`, `GET /products*`,
+`GET /suppliers`) stay open. **`POST /update_DB` is the one exception** — it also accepts an
+`X-Service-Token` header checked against `SERVICE_API_TOKEN` (`require_manager_or_service_token` in
+`src/common/auth.py`), because bulk price import is normally run by a script/cron, not from a logged-in
+browser. If `SERVICE_API_TOKEN` is unset the route is manager-only by construction (an empty string
+never passes the `hmac.compare_digest` check).
+
+The WhatsApp webhook (`POST /api/v1/whatsapp/webhook`) requires `?token=<GUPSHUP_VERIFY_TOKEN>` in the
+query string — same variable already used for the GET `hub.verify_token` handshake. On mismatch it logs
+a warning and still returns `200 OK` (not 403), matching the existing behavior for malformed JSON/missing
+`entry[]` in that handler — don't reveal to a scanner that the URL is live, and don't trigger Gupshup
+retries. **This means the Callback URL registered in the Gupshup dashboard must include the token as a
+query param**, or real inbound messages get silently dropped after deploy — the request still 200s, so
+nothing looks wrong in logs or monitoring. `tests/integration/*.py` and `scripts/send_test_message.py`
+already append `?token=...` (reading `GUPSHUP_VERIFY_TOKEN`, same default `"gqgroup_verify"`) — keep any
+new webhook caller consistent with that.
 
 ### Graceful degradation
 

@@ -14,6 +14,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from sqlalchemy import func, select, text
@@ -21,7 +23,14 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.common.logger import logger
 from src.db.chat_database import ChatSessionLocal
-from src.db.Models.chat_models import Chat, ChatMessage
+from src.db.Models.chat_models import AUTHOR_SYSTEM, Chat, ChatMessage
+from src.db.Models.manager_models import Manager
+
+# Через сколько минут бездействия менеджера диалог автоматически возвращается боту.
+# taken_over_at — не только момент перехвата: /reply (см. src/api/v1/console.py)
+# обновляет его при каждом успешном ответе менеджера, так что здесь это
+# фактически время последней активности менеджера в диалоге.
+TAKEOVER_TIMEOUT_MINUTES: int = int(os.getenv("TAKEOVER_AUTO_RELEASE_MINUTES", "20"))
 
 # Человекочитаемые подписи для превью в списке чатов, когда текста нет.
 _TYPE_LABELS = {
@@ -187,6 +196,58 @@ def is_taken_over_sync(channel: str, external_id: str) -> bool:
         db.close()
 
 
+def release_stale_takeovers_sync() -> int:
+    """
+    Возвращает боту диалоги, которые менеджер держит дольше
+    TAKEOVER_TIMEOUT_MINUTES без единого ответа клиенту.
+
+    Вызывается периодически из фонового цикла в src/main.py (lifespan),
+    поэтому ошибка здесь не должна ронять приложение — только логируется.
+    """
+    db = ChatSessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=TAKEOVER_TIMEOUT_MINUTES)
+        stale = db.execute(
+            select(Chat).where(Chat.is_taken_over.is_(True), Chat.taken_over_at < cutoff)
+        ).scalars().all()
+
+        released = 0
+        for chat in stale:
+            manager = db.get(Manager, chat.taken_over_by_id) if chat.taken_over_by_id else None
+            manager_label = manager.name if manager else "Менеджер"
+            db.add(
+                ChatMessage(
+                    chat_id=chat.id,
+                    direction="out",
+                    author=AUTHOR_SYSTEM,
+                    text=(
+                        f"{manager_label} не отвечал клиенту {TAKEOVER_TIMEOUT_MINUTES} мин. — "
+                        f"диалог автоматически возвращён боту"
+                    ),
+                    msg_type="system",
+                )
+            )
+            chat.is_taken_over = False
+            chat.taken_over_by_id = None
+            chat.taken_over_at = None
+            chat.updated_at = func.now()
+            released += 1
+
+        if released:
+            db.commit()
+            logger.info(
+                "Автовозврат боту: %d диалог(ов) — менеджер не отвечал %d мин.",
+                released, TAKEOVER_TIMEOUT_MINUTES,
+            )
+        return released
+    except Exception as e:
+        db.rollback()
+        logger.error("release_stale_takeovers_sync failed: %s", e, exc_info=True)
+        return 0
+    finally:
+        db.close()
+
+
 # ─── Async-обёртки ───────────────────────────────────────────
 
 async def save_message(**kwargs: Any) -> Optional[int]:
@@ -203,6 +264,14 @@ async def is_taken_over(channel: str, external_id: str) -> bool:
     except Exception as e:
         logger.error("chat_store.is_taken_over failed: %s", e, exc_info=True)
         return False
+
+
+async def release_stale_takeovers() -> int:
+    try:
+        return await asyncio.to_thread(release_stale_takeovers_sync)
+    except Exception as e:
+        logger.error("chat_store.release_stale_takeovers failed: %s", e, exc_info=True)
+        return 0
 
 
 # ─── Отправка клиенту (используется роутером консоли) ────────

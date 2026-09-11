@@ -2,6 +2,7 @@
 """Часть 2: изоляция (правильно), персистентность, API, перехват."""
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -12,6 +13,7 @@ from sqlalchemy import text as sqltext
 
 BASE = "http://localhost:8000"
 API = BASE + "/api/v1/console"
+WEBHOOK_TOKEN = os.getenv("GUPSHUP_VERIFY_TOKEN", "gqgroup_verify")
 _results = []
 
 PASSWORDS = {c: "TestPass_" + c + "_123" for c in
@@ -59,7 +61,8 @@ def webhook(phone, body="", wamid=None, name="Клиент", mtype="text", extra
     payload = {"entry": [{"changes": [{"field": "messages", "value": {
         "contacts": [{"profile": {"name": name}, "wa_id": phone}],
         "messages": [msg]}}]}]}
-    r = httpx.post(BASE + "/api/v1/whatsapp/webhook", json=payload, timeout=25)
+    r = httpx.post(BASE + "/api/v1/whatsapp/webhook", params={"token": WEBHOOK_TOKEN},
+                   json=payload, timeout=25)
     return r.status_code, msg["id"]
 
 

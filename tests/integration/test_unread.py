@@ -2,6 +2,7 @@
 """Изолированная проверка счётчика непрочитанных и истории бота."""
 from __future__ import annotations
 
+import os
 import time
 import uuid
 
@@ -10,6 +11,7 @@ from sqlalchemy import text as sqltext
 
 BASE = "http://localhost:8000"
 API = BASE + "/api/v1/console"
+WEBHOOK_TOKEN = os.getenv("GUPSHUP_VERIFY_TOKEN", "gqgroup_verify")
 _res = []
 
 
@@ -33,7 +35,8 @@ def q1(sql, **p):
 
 def webhook(phone, body, name="Клиент"):
     mid = "wamid." + uuid.uuid4().hex[:12]
-    httpx.post(BASE + "/api/v1/whatsapp/webhook", timeout=25, json={"entry": [{"changes": [{
+    httpx.post(BASE + "/api/v1/whatsapp/webhook", params={"token": WEBHOOK_TOKEN},
+              timeout=25, json={"entry": [{"changes": [{
         "field": "messages", "value": {
             "contacts": [{"profile": {"name": name}, "wa_id": phone}],
             "messages": [{"from": phone, "id": mid, "type": "text", "text": {"body": body}}]}}]}]})
