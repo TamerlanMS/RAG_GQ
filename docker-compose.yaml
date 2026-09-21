@@ -45,7 +45,7 @@ services:
       - DB_HOST=postgres
       - INTERNAL_API_URL=http://api:8000
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8010:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,6 +55,36 @@ services:
     tty: true
     stdin_open: true
 
+  # Обратный прокси с автоматическим TLS (Let's Encrypt) — нужен для WhatsApp-вебхука
+  # (Gupshup обязан достучаться по HTTPS) и веб-консоли. api сам слушает только
+  # 127.0.0.1:8010, т.е. без caddy порт снаружи вообще не виден — так и было
+  # задумано, пока приложение работало только как Telegram-бот через polling.
+  # См. DEPLOY.md. Требует DOMAIN и ACME_EMAIL в .env.
+  #
+  # profiles: ["prod"] — НЕ поднимается обычным `docker compose up -d` (в dev
+  # DOMAIN/ACME_EMAIL не заданы, локальный домен всё равно не резолвится на эту
+  # машину). На сервере запускать явно: `docker compose --profile prod up -d`.
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy_gq
+    profiles: ["prod"]
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+
 volumes:
   pgdata:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
     driver: local
