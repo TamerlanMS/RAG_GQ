@@ -89,11 +89,12 @@ export const api = {
       body: JSON.stringify({ text, take_over: takeOver }),
     }),
 
-  replyFile: (chatId, file, caption = "", takeOver = true) => {
+  replyFile: (chatId, file, caption = "", takeOver = true, voice = false) => {
     const form = new FormData();
     form.append("file", file);
     form.append("caption", caption);
     form.append("take_over", takeOver ? "true" : "false");
+    form.append("voice", voice ? "true" : "false");
     return request(`/chats/${chatId}/reply-file`, { method: "POST", body: form });
   },
 

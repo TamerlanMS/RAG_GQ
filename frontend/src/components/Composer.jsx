@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useVoiceRecorder } from "../hooks/useVoiceRecorder.js";
 
 // Лимит WhatsApp на документ; для фото (5 МБ) и видео/аудио (16 МБ) точную
 // проверку делает сервер — он знает, каким типом уйдёт файл.
@@ -9,12 +10,30 @@ function formatSize(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
 }
 
-export function Composer({ onSend, onSendFile, disabled }) {
+function formatTimer(sec) {
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+}
+
+export function Composer({ onSend, onSendFile, onSendVoice, disabled }) {
   const [text, setText] = useState("");
   const [file, setFile] = useState(null);
   const [fileError, setFileError] = useState("");
   const [busy, setBusy] = useState(false);
   const inputRef = useRef(null);
+  const voice = useVoiceRecorder();
+
+  async function sendVoice() {
+    const blob = await voice.stop();
+    if (!blob || !blob.size) return;
+    setBusy(true);
+    try {
+      await onSendVoice(blob);
+    } catch {
+      // Ошибку показывает Console.
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function send() {
     const value = text.trim();
@@ -58,8 +77,34 @@ export function Composer({ onSend, onSendFile, disabled }) {
 
   const canSend = !disabled && !busy && (file || text.trim());
 
+  if (voice.recording) {
+    return (
+      <div className="composer-wrap">
+        <div className="composer composer-recording">
+          <button type="button" className="btn-ghost" onClick={voice.cancel} title="Удалить запись">
+            ✕ Отменить
+          </button>
+          <span className="rec-indicator">
+            <span className="rec-dot" /> Запись {formatTimer(voice.seconds)}
+          </span>
+          <button type="button" className="btn-primary btn-send" onClick={sendVoice}>
+            Отправить голосовое
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="composer-wrap">
+      {voice.error && (
+        <div className="composer-file">
+          <span className="composer-file-error">{voice.error}</span>
+          <button type="button" className="composer-file-remove" onClick={() => voice.setError("")}>
+            ×
+          </button>
+        </div>
+      )}
       {(file || fileError) && (
         <div className="composer-file">
           {file ? (
@@ -91,6 +136,15 @@ export function Composer({ onSend, onSendFile, disabled }) {
           title="Прикрепить файл: фото, видео, аудио или документ"
         >
           📎
+        </button>
+        <button
+          type="button"
+          className="btn-attach"
+          onClick={voice.start}
+          disabled={disabled || busy || Boolean(file)}
+          title="Записать голосовое"
+        >
+          🎤
         </button>
         <textarea
           value={text}

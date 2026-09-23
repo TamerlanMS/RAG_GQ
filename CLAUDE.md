@@ -142,6 +142,14 @@ so the merge uses `jsonb_typeof`, not `COALESCE`. The console serves files via
 are served inline; everything else is forced to `attachment` + `application/octet-stream`, all with
 `CSP: sandbox`. The same downloaded bytes are reused for Vision and the Telegram forward.
 
+Outgoing files (`POST /console/chats/{id}/reply-file`) go the other way: Gupshup only accepts a URL, so
+the upload is saved to `MEDIA_DIR` and Gupshup gets a 1-hour path-signed `/console/media-out` link on
+`PUBLIC_BASE_URL` or `https://$DOMAIN` — signed by path, not message id, because the message row is
+written only after Gupshup accepts. Voice notes recorded in the console (`voice=true`) are re-encoded by
+**ffmpeg** (installed in the Dockerfile) to mono OGG/Opus — the only format WhatsApp shows as a voice note;
+browsers record WebM (Chrome/Firefox) or MP4 (Safari). Recording needs a secure context (https or
+localhost), and nginx must allow large bodies (`client_max_body_size`).
+
 Real-time is short polling with an `after_id` cursor (chats 5s, thread 3s), not SSE/WebSocket: it
 self-heals across restarts and survives a topology change. Auth is bcrypt + JWT signed with `API_TOKEN`;
 seed managers with `docker compose exec api python scripts/seed_managers.py`.

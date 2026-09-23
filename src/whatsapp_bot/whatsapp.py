@@ -324,9 +324,12 @@ async def _send_whatsapp_media(
     caption: str = "",
     file_name: str | None = None,
     persist_manager_id: int | None = None,
+    persist_type: str | None = None,
 ) -> int | None:
     """
     Отправить файл клиенту: kind — image | video | audio | document.
+    persist_type — msg_type записи в консоли, если отличается от kind
+    (голосовое уходит в Gupshup как audio, а в консоли помечается voice).
 
     url — публичная ссылка, по которой Gupshup сам скачает файл
     (см. media_store.signed_path_url). media — поля для extra
@@ -357,7 +360,7 @@ async def _send_whatsapp_media(
             author="manager",
             author_manager_id=persist_manager_id,
             text_body=(caption if inline_caption else "") or None,
-            msg_type=kind,
+            msg_type=persist_type or kind,
             file_name=file_name,
             extra=media,
         )

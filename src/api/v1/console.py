@@ -427,11 +427,16 @@ async def reply_file_to_chat(
     file: UploadFile = File(...),
     caption: str = Form("", max_length=1024),
     take_over: bool = Form(True),
+    voice: bool = Form(False),
     manager: Manager = Depends(get_current_manager),
     db: Session = Depends(get_chat_db),
 ) -> ActionResponse:
     """
     Отправить клиенту файл: фото, видео, аудио или документ.
+
+    voice=true — это голосовое, записанное в консоли: перекодируется в
+    OGG/Opus (media_store.to_whatsapp_voice), чтобы у клиента оно выглядело
+    голосовым WhatsApp, а не аудиофайлом.
 
     Gupshup принимает только ссылку на файл и скачивает его сам, поэтому файл
     сначала сохраняется на диск, а Gupshup получает часовую подписанную
@@ -457,7 +462,16 @@ async def reply_file_to_chat(
     if not data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Файл пустой")
     file_name = Path((file.filename or "файл").replace("\\", "/")).name[:200] or "файл"
-    mime = media_store.guess_mime(file_name, file.content_type)
+    if voice:
+        data = await asyncio.to_thread(media_store.to_whatsapp_voice, data)
+        if not data:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="Не удалось обработать запись — попробуйте записать ещё раз")
+        file_name = "Голосовое.ogg"
+        mime = "audio/ogg"
+        caption = ""
+    else:
+        mime = media_store.guess_mime(file_name, file.content_type)
     kind = media_store.classify_outgoing(mime)
     limit = media_store.OUT_LIMITS[kind]
     if len(data) > limit:
@@ -482,6 +496,7 @@ async def reply_file_to_chat(
         caption=caption.strip(),
         file_name=file_name,
         persist_manager_id=manager.id,
+        persist_type=("voice" if voice else None),
     )
     if message_id is None:
         media_store.delete(media["media_path"])

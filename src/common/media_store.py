@@ -210,3 +210,48 @@ def delete(rel: str) -> None:
         except Exception as e:
             logger.warning("media_store.delete failed for %s: %s", rel, e)
 
+
+
+# ─── Голосовые из консоли ────────────────────────────────────
+
+VOICE_MAX_SECONDS = 15 * 60
+
+
+def to_whatsapp_voice(data: bytes) -> Optional[bytes]:
+    """
+    Перекодирует запись из браузера в OGG/Opus моно — единственный формат,
+    который WhatsApp показывает клиенту как голосовое (с волной), а не как
+    аудиофайл. Вход — что угодно, что понимает ffmpeg (WebM из Chrome/Firefox,
+    MP4/AAC из Safari). None — ffmpeg не справился (битый файл, не аудио).
+
+    Через временные файлы, а не pipe: у MP4 из Safari индекс (moov) бывает
+    в конце файла, и из несикаемого потока ffmpeg его не прочитает.
+    """
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "in"
+        dst = Path(tmp) / "out.ogg"
+        src.write_bytes(data)
+        try:
+            proc = subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                    "-i", str(src),
+                    "-vn", "-ac", "1", "-ar", "48000",
+                    "-c:a", "libopus", "-b:a", "32k", "-application", "voip",
+                    "-t", str(VOICE_MAX_SECONDS),
+                    str(dst),
+                ],
+                capture_output=True,
+                timeout=120,
+            )
+        except Exception as e:
+            logger.error("media_store.to_whatsapp_voice: ffmpeg не запустился: %s", e)
+            return None
+        if proc.returncode != 0 or not dst.is_file() or dst.stat().st_size == 0:
+            logger.warning("media_store.to_whatsapp_voice: ffmpeg rc=%s: %s",
+                           proc.returncode, proc.stderr.decode(errors="replace")[:300])
+            return None
+        return dst.read_bytes()

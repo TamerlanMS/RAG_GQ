@@ -167,6 +167,57 @@ check("просроченная ссылка -> 404",
       httpx.get(f"{API}/media-out", params={"p": rel, "exp": past, "sig": media_store._sign_path(rel, past)},
                 timeout=25).status_code == 404)
 
+section("6b. Голосовое из консоли: перекодирование в OGG/Opus")
+import tempfile
+
+
+def make_audio(ext, codec):
+    """Настоящая запись, как её отдаёт браузер: Chrome — WebM/Opus, Safari — MP4/AAC."""
+    with tempfile.TemporaryDirectory() as tmp:
+        out = os.path.join(tmp, "rec." + ext)
+        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                        "-i", "sine=frequency=440:duration=2", "-c:a", codec, out], check=True)
+        return open(out, "rb").read()
+
+
+def probe(data):
+    with tempfile.NamedTemporaryFile(suffix=".bin") as f:
+        f.write(data)
+        f.flush()
+        r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_name,channels",
+                            "-show_entries", "format=format_name,duration", "-of", "json", f.name],
+                           capture_output=True, text=True)
+        return json.loads(r.stdout or "{}")
+
+
+check("ffmpeg есть в образе", subprocess.run(["ffmpeg", "-version"], capture_output=True).returncode == 0)
+cid3, _ = new_chat()
+for label, ext, codec, mime in [("Chrome WebM/Opus", "webm", "libopus", "audio/webm;codecs=opus"),
+                                ("Safari MP4/AAC", "m4a", "aac", "audio/mp4")]:
+    data = make_audio(ext, codec)
+    r = httpx.post(f"{API}/chats/{cid3}/reply-file", headers=auth(T), timeout=60,
+                   files={"file": ("voice." + ext, data, mime)},
+                   data={"caption": "не должна уйти", "take_over": "true", "voice": "true"})
+    m = (r.json().get("message") or {}) if r.status_code == 200 else {}
+    check(f"{label}: 200", r.status_code == 200, r.text[:200])
+    check(f"{label}: в консоли msg_type = voice", m.get("msg_type") == "voice", str(m.get("msg_type")))
+    check(f"{label}: media_mime = audio/ogg", m.get("media_mime") == "audio/ogg", str(m.get("media_mime")))
+    check(f"{label}: подпись у голосового не отправляется", not m.get("text"))
+    if m.get("media_url"):
+        f = httpx.get(BASE + m["media_url"], timeout=25)
+        info = probe(f.content)
+        st = (info.get("streams") or [{}])[0]
+        check(f"{label}: файл — OGG", f.content[:4] == b"OggS")
+        check(f"{label}: кодек opus, моно", st.get("codec_name") == "opus" and st.get("channels") == 1, str(st))
+        dur = float((info.get("format") or {}).get("duration") or 0)
+        check(f"{label}: длительность сохранена (~2 с)", 1.5 < dur < 2.6, str(dur))
+last = q1("SELECT text FROM chat_messages WHERE chat_id=:c AND author='manager' ORDER BY id DESC LIMIT 1", c=cid3)
+check("подпись не ушла отдельным сообщением", not last, str(last))
+r = httpx.post(f"{API}/chats/{cid3}/reply-file", headers=auth(T), timeout=60,
+               files={"file": ("voice.webm", os.urandom(2000), "audio/webm")}, data={"voice": "true"})
+check("мусор вместо записи -> 400 с понятным текстом",
+      r.status_code == 400 and "запис" in r.json().get("detail", ""), f"{r.status_code} {r.text[:120]}")
+
 section("7. Формат запроса к Gupshup (dry-run выключен, Gupshup подменён)")
 captured = []
 gupshup_status = {"code": 200}

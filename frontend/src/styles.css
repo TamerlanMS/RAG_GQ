@@ -682,6 +682,37 @@ button {
   border-color: var(--accent);
 }
 
+.btn-attach:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.composer-recording {
+  align-items: center;
+}
+
+.rec-indicator {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e53935;
+  animation: rec-pulse 1s ease-in-out infinite;
+}
+
+@keyframes rec-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
 @media (max-width: 720px) {
   .sidebar {
     width: 45%;

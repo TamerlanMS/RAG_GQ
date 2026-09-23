@@ -15,8 +15,11 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Install system dependencies
+# ffmpeg — перекодирование голосовых из консоли: браузер пишет WebM (Chrome,
+# Firefox) или MP4 (Safari), а WhatsApp как голосовое принимает только OGG/Opus.
 RUN apt-get update && apt-get install -y \
     curl \
+    && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry

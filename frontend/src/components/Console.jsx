@@ -193,6 +193,33 @@ export function Console({ manager, onLogout }) {
     }
   }
 
+  async function handleSendVoice(blob) {
+    const chatId = activeId;
+    const ext = blob.type.includes("mp4") ? "m4a" : blob.type.includes("ogg") ? "ogg" : "webm";
+    const file = new File([blob], `voice.${ext}`, { type: blob.type || "audio/webm" });
+    const optimistic = {
+      id: `pending-${Date.now()}`,
+      direction: "out",
+      author: "manager",
+      author_manager_name: manager.name,
+      text: null,
+      msg_type: "voice",
+      created_at: new Date().toISOString(),
+      pending: true,
+    };
+    setMessages((prev) => [...prev, optimistic]);
+    try {
+      const res = await api.replyFile(chatId, file, "", true, true);
+      setChats((prev) => prev.map((c) => (c.id === chatId ? res.chat : c)));
+      setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+      await pollMessages();
+    } catch (err) {
+      setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+      setThreadError(err.message);
+      throw err;
+    }
+  }
+
   async function handleTakeover(force = false) {
     try {
       const res = await api.takeover(activeId, force);
@@ -300,7 +327,7 @@ export function Console({ manager, onLogout }) {
               {threadError && <div className="pane-error">{threadError}</div>}
 
               <MessageThread messages={messages} loading={threadLoading} />
-              <Composer onSend={handleSend} onSendFile={handleSendFile} disabled={false} />
+              <Composer onSend={handleSend} onSendFile={handleSendFile} onSendVoice={handleSendVoice} disabled={false} />
             </>
           )}
         </main>
