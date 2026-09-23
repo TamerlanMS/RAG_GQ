@@ -10,7 +10,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // В dev браузер считает всё same-origin — CORS не задействован.
-      "/api": { target: "http://127.0.0.1:8010", changeOrigin: true },
+      "/api": { target: "http://127.0.0.1:8000", changeOrigin: true },
     },
   },
 });

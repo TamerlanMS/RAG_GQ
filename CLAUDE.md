@@ -35,7 +35,7 @@ Lint / types (pre-commit config pins these; run them the same way):
 poetry run pre-commit run --all-files
 ```
 
-Frontend (manager console) — dev server with a proxy to the API on :8010:
+Frontend (manager console) — dev server with a proxy to the API on :8000:
 
 ```bash
 cd frontend && npm install && npm run dev
@@ -48,7 +48,7 @@ into `/srv/console`, so a console change needs `--build`, not `restart`:
 docker compose up -d --build
 ```
 
-Compose starts `postgres` (host port **54321**) and `api` (bound to `127.0.0.1:8010`; uvicorn listens on 8000 inside the container), overriding
+Compose starts `postgres` (host port **54321**) and `api` (bound to `127.0.0.1:8000`), overriding
 `DB_HOST=postgres` and `INTERNAL_API_URL=http://api:8000`. The repo is bind-mounted into `/app`, so
 `docker compose restart api` picks up code changes without a rebuild.
 

@@ -16,7 +16,7 @@
 
 ## Что добавляется
 
-Порт `api` в `docker-compose.yaml` слушает только `127.0.0.1:8010` — снаружи
+Порт `api` в `docker-compose.yaml` слушает только `127.0.0.1:8000` — снаружи
 контейнера недоступен. WhatsApp-вебхуку (Gupshup обязан достучаться по
 HTTPS) и веб-консоли нужен публичный адрес с TLS. Для этого в
 `docker-compose.yaml` добавлен сервис `caddy` (обратный прокси, сам
@@ -31,19 +31,42 @@ HTTPS) и веб-консоли нужен публичный адрес с TLS.
 
 ## Часть 1 — локально (на этой машине)
 
-`master` не трогаем — всё остаётся в `feature/frontend`, просто отправляем
-её на GitHub:
+`master` не трогаем — всё остаётся в `feature/frontend` (уже запушена на
+GitHub). Загрузить на сервер готовый продовый `.env.production` под именем
+`.env.new` — старый `.env` пока НЕ перезаписываем (PowerShell):
 
-```bash
-git push origin feature/frontend
+```powershell
+scp .env.production root@89.218.93.198:/путь/к/проекту/.env.new
 ```
 
 ## Часть 2 — на сервере (SSH на 89.218.93.198)
 
-### 2.1. Переключиться на feature/frontend
+### 2.0. Осмотреться и сделать бэкап
 
 ```bash
 cd /путь/к/проекту   # там же, где уже лежит текущий деплой
+docker compose ps
+git status --short
+sudo ss -tlnp | grep -E ':(80|443) '
+```
+
+- `git status` должен быть пустым (кроме `.env.new`) — иначе `git checkout`
+  ниже откажется переключать ветку; локальные правки на сервере сначала
+  сохранить (`git stash`) или разобраться, что это.
+- Если `ss` что-то показал на 80/443 (nginx, apache, другой прокси) —
+  его нужно остановить/перенастроить, иначе `caddy` не поднимется.
+
+Бэкап (нужен для отката, см. конец файла):
+
+```bash
+cp .env .env.backup
+docker compose exec -T postgres sh -c 'pg_dumpall -U "$POSTGRES_USER"' > backup-$(date +%F).sql
+git rev-parse --abbrev-ref HEAD > .branch.backup
+```
+
+### 2.1. Переключиться на feature/frontend
+
+```bash
 git fetch origin
 git checkout feature/frontend 2>/dev/null || git checkout -b feature/frontend origin/feature/frontend
 git pull origin feature/frontend
@@ -53,50 +76,46 @@ git pull origin feature/frontend
 создаст и привяжет к `origin/feature/frontend`, если уже есть — просто
 переключится).
 
-### 2.2. Добавить новые переменные в СУЩЕСТВУЮЩИЙ `.env`
+### 2.2. Подставить новый `.env`
 
-Не пересоздавайте `.env` — в нём уже настоящие `OPENAI_API_KEY`,
-`TELEGRAM_INPUT_BOT_TOKEN` и т.д. Допишите в конец только то, чего там ещё
-нет (сверить полный список — `.env.example`):
+`.env.new` уже содержит все переменные (консоль, Gupshup, `DOMAIN`, случайный
+`API_TOKEN`), но две группы значений ОБЯЗАНЫ совпадать со старым серверным
+`.env`:
 
-```bash
-cat >> .env <<'EOF'
+- `DB_USER` / `DB_PASS` / `DB_NAME` — Postgres применяет их только при первой
+  инициализации `pgdata/`; с другими значениями `api` просто не подключится
+  к уже существующей базе.
+- `PINECONE_*` — в `.env.production` они пустые; если на сервере были
+  заполнены, перенести (иначе поиск через `/ask` деградирует).
 
-# ─── Консоль менеджеров ───────────────────────────────────
-API_TOKEN=CHANGE_ME_RANDOM_64_CHARS
-SERVICE_API_TOKEN=
-CHAT_DB_NAME=gq_chat
-CONSOLE_JWT_TTL_HOURS=12
-CONSOLE_DIST_DIR=/srv/console
-TAKEOVER_AUTO_RELEASE_MINUTES=20
-
-# ─── WhatsApp (Gupshup) — заполнить реальными значениями ──
-GUPSHUP_API_KEY=
-GUPSHUP_APP_NAME=GQGroup
-GUPSHUP_SOURCE_PHONE=
-GUPSHUP_VERIFY_TOKEN=CHANGE_ME_RANDOM_SECRET
-WHATSAPP_DRY_RUN=false
-
-# ─── Обратный прокси ───────────────────────────────────────
-DOMAIN=bot.gqe-online.kz
-ACME_EMAIL=ваш-реальный-email@пример
-EOF
-```
-
-Обязательно сгенерировать случайные значения вместо `CHANGE_ME_...`:
+Сравнить, не показывая значения:
 
 ```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(48))"   # для API_TOKEN
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"   # для GUPSHUP_VERIFY_TOKEN
+for k in DB_HOST DB_PORT DB_USER DB_PASS DB_NAME PINECONE_API_KEY PINECONE_NAMES_INDEX_HOST PINECONE_ARTICUL_INDEX_HOST TELEGRAM_INPUT_BOT_TOKEN TELEGRAM_BOT_TOKEN; do
+  a=$(grep "^$k=" .env.backup | cut -d= -f2-); b=$(grep "^$k=" .env.new | cut -d= -f2-)
+  [ "$a" = "$b" ] && echo "OK       $k" || echo "РАЗЛИЧИЕ $k"
+done
 ```
 
-`API_TOKEN` — это ещё и секрет подписи JWT консоли (см. `CLAUDE.md`), должен
-быть длинным и случайным. `GUPSHUP_VERIFY_TOKEN` — секрет вебхука, он же
-понадобится в шаге 2.5.
+Затем `nano .env.new`:
 
-Если раньше в `.env` уже была строка `DB_PORT=...` — проверьте, что это
-просто число (`5432`), без пояснений в той же строке: `docker compose`
-не обрезает `# комментарий` после значения.
+- для каждого `РАЗЛИЧИЕ` по `DB_*` и `PINECONE_*` — взять значение из `.env.backup`;
+- `ACME_EMAIL` — вписать настоящий email (с placeholder'ом `caddy`
+  упадёт на старте: `wrong argument count ... after 'email'`);
+- `WHATSAPP_DRY_RUN=false`;
+- ни одна строка не должна иметь `# комментарий` после значения —
+  `docker compose` не обрезает его и он попадёт в переменную
+  (особенно опасно для `TELEGRAM_INPUT_BOT_TOKEN`: невалидный токен роняет
+  всё приложение при старте).
+
+Проверить, что нет дублей ключей (должно быть пусто), и подставить:
+
+```bash
+grep -oE '^[A-Z_]+=' .env.new | sort | uniq -d
+mv .env.new .env
+```
+
+`GUPSHUP_VERIFY_TOKEN` из этого файла понадобится в шаге 2.6.
 
 ### 2.3. Открыть порты 80/443
 
@@ -106,7 +125,7 @@ sudo ufw allow 443/tcp
 ```
 
 (если используется не `ufw`, а провайдерский firewall/security group — открыть
-там; 8010 наружу открывать не нужно, он и так только на 127.0.0.1).
+там; 8000 наружу открывать не нужно, он и так только на 127.0.0.1).
 
 ### 2.4. Запустить
 
@@ -116,7 +135,16 @@ docker compose --profile prod up -d caddy
 ```
 
 Первая команда пересоберёт и перезапустит `api` (краткий даунтайм Telegram-бота
-на пересборку — это нормально) и поднимет `postgres`. Вторая — обратный прокси.
+на пересборку — это нормально: Telegram копит сообщения, бот заберёт их после
+старта) и поднимет `postgres`. Вторая — обратный прокси.
+
+Проверить, что `api` стартовал чисто (есть `Application startup complete`,
+нет `Traceback`/`TokenValidationError`), и что он отвечает напрямую:
+
+```bash
+docker compose logs api --tail 50
+curl -s localhost:8000/api/v1/status_DB
+```
 
 Проверить, что сертификат выпустился:
 
@@ -159,6 +187,36 @@ https://bot.gqe-online.kz/api/v1/whatsapp/webhook?token=<значение GUPSHU
 Отправьте тестовое сообщение боту в WhatsApp и убедитесь, что оно появилось
 в `https://bot.gqe-online.kz/console/`.
 
+### 2.7. Проверить Telegram
+
+Написать клиентскому Telegram-боту — должен ответить как раньше. Если молчит:
+
+```bash
+docker compose logs api | grep -iE "telegram|aiogram" | tail -20
+```
+
+`Conflict: terminated by other getUpdates request` означает, что с тем же
+токеном где-то запущен второй экземпляр бота (например, локально) — его
+нужно остановить.
+
+---
+
+## Откат
+
+Если после деплоя что-то не работает и разбираться некогда:
+
+```bash
+docker compose --profile prod stop caddy
+git checkout "$(cat .branch.backup)"
+cp .env.backup .env
+docker compose up -d --build
+```
+
+Товары и прочие данные основной базы не затрагиваются (`pgdata/` остаётся
+на месте). Переписка консоли лежит в отдельной базе `gq_chat` и старой
+версией просто не используется. Крайний случай — восстановление из
+`backup-<дата>.sql`.
+
 ---
 
 ## Если не получилось (ACME)
@@ -175,11 +233,16 @@ https://bot.gqe-online.kz/api/v1/whatsapp/webhook?token=<значение GUPSHU
 ## Безопасность — стоит сделать отдельно
 
 - `docker-compose.yaml` публикует Postgres на `54321:5432` — на публичном
-  сервере имеет смысл убрать это наружу (оставить доступ только изнутри
-  Docker-сети) или закрыть порт файрволом, если прямой доступ к БД снаружи
-  не нужен.
-- Пароли, которые выведет `seed_managers.py`, — временные. Смените их через
-  `POST /api/v1/console/me/password` после первого входа.
+  сервере база видна из интернета. `ufw deny` здесь **не поможет**: Docker
+  пишет свои правила iptables в обход `ufw`. Надёжно — поменять в
+  `docker-compose.yaml` на `"127.0.0.1:54321:5432"` (доступ останется
+  с самого сервера и через SSH-туннель).
+- Пароли, которые выведет `seed_managers.py`, — временные. В интерфейсе
+  консоли смены пароля нет; задать свой пароль менеджеру можно на сервере:
+  `docker compose exec api python scripts/seed_managers.py --code <code> --password '<пароль>'`
+  (коды — `director`, `kalbaeva`, `sabieva`, `zhenibek`, `dolakov` из
+  `src/settings/config.py`). Повторный запуск без `--password` пароли
+  существующих менеджеров не меняет.
 - `SERVICE_API_TOKEN` можно оставить пустым, если массовый импорт прайса
   всегда делается через консоль — тогда `/update_DB` останется доступен
   только вошедшим менеджерам.

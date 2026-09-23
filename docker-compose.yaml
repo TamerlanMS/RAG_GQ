@@ -45,7 +45,7 @@ services:
       - DB_HOST=postgres
       - INTERNAL_API_URL=http://api:8000
     ports:
-      - "127.0.0.1:8010:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,7 +57,7 @@ services:
 
   # Обратный прокси с автоматическим TLS (Let's Encrypt) — нужен для WhatsApp-вебхука
   # (Gupshup обязан достучаться по HTTPS) и веб-консоли. api сам слушает только
-  # 127.0.0.1:8010, т.е. без caddy порт снаружи вообще не виден — так и было
+  # 127.0.0.1:8000, т.е. без caddy порт снаружи вообще не виден — так и было
   # задумано, пока приложение работало только как Telegram-бот через polling.
   # См. DEPLOY.md. Требует DOMAIN и ACME_EMAIL в .env.
   #

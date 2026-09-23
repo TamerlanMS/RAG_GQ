@@ -141,3 +141,6 @@ pgdata/
 # Frontend (веб-консоль менеджеров)
 frontend/node_modules/
 frontend/dist/
+
+# Пароли менеджеров (локальный файл, не для git)
+CREDENTIALS.md
