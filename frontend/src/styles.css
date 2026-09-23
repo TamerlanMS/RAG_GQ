@@ -506,8 +506,13 @@ button {
 
 .attachment-image {
   display: block;
-  max-width: min(320px, 100%);
+  /* Не проценты: у пузыря ширина по содержимому, и max-width в % браузер
+     не учитывает при расчёте ширины пузыря — тот растягивался по исходной
+     ширине картинки, оставляя пустое поле справа. */
+  max-width: min(320px, 60vw);
   max-height: 360px;
+  width: auto;
+  height: auto;
   border-radius: 6px;
   object-fit: cover;
   cursor: zoom-in;
@@ -522,7 +527,7 @@ button {
 
 .attachment-video {
   display: block;
-  max-width: min(360px, 100%);
+  max-width: min(360px, 60vw);
   max-height: 360px;
   border-radius: 6px;
   margin-bottom: 4px;
@@ -533,8 +538,7 @@ button {
   display: block;
   /* Фиксированная ширина: у пузыря ширина по содержимому, и проценты
      схлопывали плеер до одной кнопки. */
-  width: 300px;
-  max-width: 100%;
+  width: min(300px, 60vw);
   margin-bottom: 4px;
 }
 
@@ -620,6 +624,62 @@ button {
 .btn-send {
   border-radius: 18px;
   flex-shrink: 0;
+}
+
+.composer-wrap {
+  flex-shrink: 0;
+}
+
+.composer-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.composer-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.composer-file-size {
+  color: var(--text-muted);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.composer-file-remove {
+  margin-left: auto;
+  border: none;
+  background: none;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.composer-file-error {
+  color: #c0392b;
+}
+
+.btn-attach {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--panel);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.btn-attach:hover:not(:disabled) {
+  border-color: var(--accent);
 }
 
 @media (max-width: 720px) {

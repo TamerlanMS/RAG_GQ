@@ -29,7 +29,7 @@ function Attachment({ msg }) {
       <div className="bubble-attachment">
         {label}
         {msg.file_name ? ` — ${msg.file_name}` : ""}
-        <span className="attachment-missing"> · файл недоступен</span>
+        {!msg.pending && <span className="attachment-missing"> · файл недоступен</span>}
       </div>
     );
   }

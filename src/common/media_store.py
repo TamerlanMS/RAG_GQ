@@ -131,3 +131,82 @@ def verify_signature(message_id: int, exp: int, sig: str) -> bool:
     if not _SECRET or exp < int(time.time()):
         return False
     return hmac.compare_digest(_sign(message_id, exp), sig)
+
+
+# ─── Исходящие файлы (менеджер → клиент) ─────────────────────
+# Gupshup не принимает файл в запросе — только ссылку, по которой он сам его
+# скачает. Поэтому файл менеджера сначала сохраняется сюда же, а Gupshup
+# получает короткоживущую подписанную ссылку на /console/media-out.
+# Подпись — по пути файла, а не по id сообщения: сообщение записывается
+# в БД только ПОСЛЕ успешной отправки, и id на момент отправки ещё нет.
+
+_OUT_URL_TTL_SECONDS = 3600
+
+# Что WhatsApp принимает как фото/видео/аудио; всё остальное уходит документом.
+_OUT_IMAGE = frozenset({"image/jpeg", "image/png"})
+_OUT_VIDEO = frozenset({"video/mp4", "video/3gpp"})
+_OUT_AUDIO = frozenset({"audio/aac", "audio/mp4", "audio/mpeg", "audio/amr", "audio/ogg"})
+
+# Лимиты WhatsApp Business на размер файла, байт.
+OUT_LIMITS = {
+    "image": 5 * 1024 * 1024,
+    "video": 16 * 1024 * 1024,
+    "audio": 16 * 1024 * 1024,
+    "document": 100 * 1024 * 1024,
+}
+OUT_MAX_BYTES = max(OUT_LIMITS.values())
+
+
+def guess_mime(file_name: Optional[str], declared: Optional[str]) -> str:
+    base = (declared or "").split(";")[0].strip().lower()
+    if base and base != "application/octet-stream":
+        return base
+    return (mimetypes.guess_type(file_name or "")[0] or "application/octet-stream").lower()
+
+
+def classify_outgoing(mime: str) -> str:
+    """Тип сообщения WhatsApp для файла менеджера: image | video | audio | document."""
+    if mime in _OUT_IMAGE:
+        return "image"
+    if mime in _OUT_VIDEO:
+        return "video"
+    if mime in _OUT_AUDIO:
+        return "audio"
+    return "document"
+
+
+def public_base_url() -> Optional[str]:
+    """Внешний адрес приложения — по нему Gupshup забирает файл."""
+    explicit = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if explicit:
+        return explicit
+    domain = os.getenv("DOMAIN", "").strip()
+    return f"https://{domain}" if domain else None
+
+
+def _sign_path(rel: str, exp: int) -> str:
+    return hmac.new(_SECRET, f"media-out:{rel}:{exp}".encode(), hashlib.sha256).hexdigest()
+
+
+def signed_path_url(rel: str) -> str:
+    """Относительная ссылка на файл по пути, действует час."""
+    from urllib.parse import quote
+
+    exp = int(time.time()) + _OUT_URL_TTL_SECONDS
+    return f"/api/v1/console/media-out?p={quote(rel, safe='/')}&exp={exp}&sig={_sign_path(rel, exp)}"
+
+
+def verify_path_signature(rel: str, exp: int, sig: str) -> bool:
+    if not _SECRET or exp < int(time.time()):
+        return False
+    return hmac.compare_digest(_sign_path(rel, exp), sig)
+
+
+def delete(rel: str) -> None:
+    path = resolve_path(rel)
+    if path is not None:
+        try:
+            path.unlink()
+        except Exception as e:
+            logger.warning("media_store.delete failed for %s: %s", rel, e)
+

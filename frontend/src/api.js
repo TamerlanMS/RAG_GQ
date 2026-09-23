@@ -25,7 +25,8 @@ async function request(path, options = {}, { handle401 = true } = {}) {
     res = await fetch(BASE + path, {
       ...options,
       headers: {
-        "Content-Type": "application/json",
+        // FormData: Content-Type с boundary браузер выставит сам.
+        ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
         ...(options.headers || {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
@@ -87,6 +88,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ text, take_over: takeOver }),
     }),
+
+  replyFile: (chatId, file, caption = "", takeOver = true) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("caption", caption);
+    form.append("take_over", takeOver ? "true" : "false");
+    return request(`/chats/${chatId}/reply-file`, { method: "POST", body: form });
+  },
 
   takeover: (chatId, force = false) =>
     request(`/chats/${chatId}/takeover`, {

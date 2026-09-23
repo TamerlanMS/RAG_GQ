@@ -315,6 +315,84 @@ async def _send_whatsapp(
         return None
 
 
+async def _send_whatsapp_media(
+    to_phone: str,
+    kind: str,
+    url: str,
+    *,
+    media: dict,
+    caption: str = "",
+    file_name: str | None = None,
+    persist_manager_id: int | None = None,
+) -> int | None:
+    """
+    Отправить файл клиенту: kind — image | video | audio | document.
+
+    url — публичная ссылка, по которой Gupshup сам скачает файл
+    (см. media_store.signed_path_url). media — поля для extra
+    (media_path/media_mime/media_size), чтобы консоль показала файл
+    у себя. Подпись к аудио и документу WhatsApp не поддерживает —
+    она уходит следом отдельным текстовым сообщением.
+
+    Как и _send_whatsapp: пишет в консоль только после успешной отправки,
+    возвращает id записи или None.
+    """
+    import json
+
+    if kind == "image":
+        message = {"type": "image", "originalUrl": url, "previewUrl": url, "caption": caption}
+    elif kind == "video":
+        message = {"type": "video", "url": url, "caption": caption}
+    elif kind == "audio":
+        message = {"type": "audio", "url": url}
+    else:
+        message = {"type": "file", "url": url, "filename": file_name or "файл"}
+    inline_caption = kind in ("image", "video")
+
+    async def _persist() -> int | None:
+        return await chat_store.save_message(
+            channel=CHANNEL_WHATSAPP,
+            external_id=to_phone,
+            direction="out",
+            author="manager",
+            author_manager_id=persist_manager_id,
+            text_body=(caption if inline_caption else "") or None,
+            msg_type=kind,
+            file_name=file_name,
+            extra=media,
+        )
+
+    if WHATSAPP_DRY_RUN:
+        logger.info("[DRY-RUN] _send_whatsapp_media to=%s kind=%s url=%s", to_phone, kind, url[:120])
+        msg_id = await _persist()
+    else:
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                payload = {
+                    "channel": "whatsapp",
+                    "source": GUPSHUP_SOURCE_PHONE,
+                    "destination": to_phone,
+                    "src.name": GUPSHUP_APP_NAME,
+                    "message": json.dumps(message),
+                }
+                logger.info("_send_whatsapp_media REQUEST to=%s kind=%s", to_phone, kind)
+                resp = await client.post(
+                    GUPSHUP_SEND_URL,
+                    headers={"apikey": GUPSHUP_API_KEY, "Content-Type": "application/x-www-form-urlencoded"},
+                    data=payload,
+                )
+                logger.info("_send_whatsapp_media RESPONSE status=%s body=%s", resp.status_code, resp.text[:300])
+                resp.raise_for_status()
+        except Exception as e:
+            logger.error("_send_whatsapp_media error (to=%s, kind=%s): %s", to_phone, kind, e)
+            return None
+        msg_id = await _persist()
+
+    if caption and not inline_caption:
+        await _send_whatsapp(to_phone, caption, persist_author="manager", persist_manager_id=persist_manager_id)
+    return msg_id
+
+
 async def _send_whatsapp_buttons(to_phone: str, body_text: str, buttons: list[dict]) -> None:
     """Отправить интерактивное сообщение с quick-reply кнопками (до 3 штук).
 

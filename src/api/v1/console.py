@@ -7,10 +7,13 @@ API менеджерской веб-консоли.
 """
 from __future__ import annotations
 
+import asyncio
+import mimetypes
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, aliased
@@ -346,16 +349,8 @@ async def release_chat(
     return ActionResponse(status="released", chat=_chat_out(chat))
 
 
-@router.post("/chats/{chat_id}/reply", response_model=ActionResponse, tags=["console"])
-async def reply_to_chat(
-    chat_id: int,
-    body: ReplyRequest,
-    manager: Manager = Depends(get_current_manager),
-    db: Session = Depends(get_chat_db),
-) -> ActionResponse:
-    """Ответить клиенту от лица менеджера."""
-    chat = _get_chat_or_404(db, chat_id)
-
+def _claim_for_reply(db: Session, chat: Chat, manager: Manager, take_over: bool) -> None:
+    """Общая часть ответа текстом и файлом: проверка конфликта и перехват."""
     if chat.is_taken_over and chat.taken_over_by_id not in (None, manager.id):
         holder = db.get(Manager, chat.taken_over_by_id)
         raise HTTPException(
@@ -365,7 +360,7 @@ async def reply_to_chat(
 
     # Перехват вместе с ответом: иначе бот ответит своё через несколько секунд,
     # и клиент получит два разных ответа на один вопрос.
-    if body.take_over and not chat.is_taken_over:
+    if take_over and not chat.is_taken_over:
         chat.is_taken_over = True
         chat.taken_over_by_id = manager.id
         chat.taken_over_at = func.now()
@@ -376,6 +371,18 @@ async def reply_to_chat(
         # (chat_store.release_stale_takeovers, TAKEOVER_AUTO_RELEASE_MINUTES).
         chat.taken_over_at = func.now()
     db.commit()
+
+
+@router.post("/chats/{chat_id}/reply", response_model=ActionResponse, tags=["console"])
+async def reply_to_chat(
+    chat_id: int,
+    body: ReplyRequest,
+    manager: Manager = Depends(get_current_manager),
+    db: Session = Depends(get_chat_db),
+) -> ActionResponse:
+    """Ответить клиенту от лица менеджера."""
+    chat = _get_chat_or_404(db, chat_id)
+    _claim_for_reply(db, chat, manager, body.take_over)
 
     # Отправка — вне транзакции. Запись сообщения делает сам транспортный хелпер
     # и только при успешной доставке.
@@ -404,6 +411,93 @@ async def reply_to_chat(
 
     # Логируем идентификаторы, но НЕ текст — это переписка клиента.
     logger.info("Ответ менеджера %s в диалоге %s (message_id=%s)", manager.code, chat.id, message_id)
+
+    db.refresh(chat)
+    msg = db.get(ChatMessage, message_id)
+    return ActionResponse(
+        status="sent",
+        chat=_chat_out(chat, manager if chat.is_taken_over else None),
+        message=_message_out(msg, manager.name) if msg else None,
+    )
+
+
+@router.post("/chats/{chat_id}/reply-file", response_model=ActionResponse, tags=["console"])
+async def reply_file_to_chat(
+    chat_id: int,
+    file: UploadFile = File(...),
+    caption: str = Form("", max_length=1024),
+    take_over: bool = Form(True),
+    manager: Manager = Depends(get_current_manager),
+    db: Session = Depends(get_chat_db),
+) -> ActionResponse:
+    """
+    Отправить клиенту файл: фото, видео, аудио или документ.
+
+    Gupshup принимает только ссылку на файл и скачивает его сам, поэтому файл
+    сначала сохраняется на диск, а Gupshup получает часовую подписанную
+    ссылку на внешний адрес приложения (DOMAIN / PUBLIC_BASE_URL).
+    """
+    from src.whatsapp_bot import whatsapp as wa
+
+    chat = _get_chat_or_404(db, chat_id)
+    if chat.channel != CHANNEL_WHATSAPP:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Отправка файлов поддерживается только в WhatsApp")
+
+    base_url = media_store.public_base_url()
+    if not base_url and not wa.WHATSAPP_DRY_RUN:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Не задан внешний адрес сервера (DOMAIN или PUBLIC_BASE_URL в .env) — "
+                   "WhatsApp не сможет забрать файл",
+        )
+
+    # Читаем с потолком: не держать в памяти больше, чем WhatsApp всё равно примет.
+    data = await file.read(media_store.OUT_MAX_BYTES + 1)
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Файл пустой")
+    file_name = Path((file.filename or "файл").replace("\\", "/")).name[:200] or "файл"
+    mime = media_store.guess_mime(file_name, file.content_type)
+    kind = media_store.classify_outgoing(mime)
+    limit = media_store.OUT_LIMITS[kind]
+    if len(data) > limit:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Файл больше {limit // (1024 * 1024)} МБ — WhatsApp такой не примет",
+        )
+
+    _claim_for_reply(db, chat, manager, take_over)
+
+    media = await asyncio.to_thread(media_store.save_bytes, data, kind, file_name, mime)
+    if media is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Не удалось сохранить файл на сервере")
+
+    url = (base_url or "") + media_store.signed_path_url(media["media_path"])
+    message_id = await wa._send_whatsapp_media(
+        chat.external_id,
+        kind,
+        url,
+        media=media,
+        caption=caption.strip(),
+        file_name=file_name,
+        persist_manager_id=manager.id,
+    )
+    if message_id is None:
+        media_store.delete(media["media_path"])
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Не удалось отправить файл клиенту. Попробуйте ещё раз.",
+        )
+
+    try:
+        wa._add_to_history(chat.external_id, "[менеджер подключился к диалогу]",
+                           f"[менеджер отправил файл: {file_name}] {caption}".strip())
+    except Exception as e:
+        logger.warning("Не удалось добавить файл менеджера в историю бота: %s", e)
+
+    logger.info("Файл от менеджера %s в диалоге %s (message_id=%s, kind=%s, size=%s)",
+                manager.code, chat.id, message_id, kind, len(data))
 
     db.refresh(chat)
     msg = db.get(ChatMessage, message_id)
@@ -541,7 +635,27 @@ def get_media(
     path = media_store.resolve_path(extra.get("media_path") or "") if extra.get("media_path") else None
     if path is None:
         raise not_found
-    mime = (extra.get("media_mime") or "application/octet-stream").lower()
+    return _file_response(path, extra.get("media_mime"), msg.file_name)
+
+
+@router.get("/media-out", tags=["console"])
+def get_outgoing_media(
+    p: str = Query(..., max_length=300),
+    exp: int = Query(...),
+    sig: str = Query(..., max_length=128),
+) -> FileResponse:
+    """
+    Файл, который менеджер отправляет клиенту, — отсюда его забирает Gupshup.
+    Ссылка подписана по пути файла и живёт час (media_store.signed_path_url).
+    """
+    path = media_store.resolve_path(p) if media_store.verify_path_signature(p, exp, sig) else None
+    if path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Файл не найден")
+    return _file_response(path, mimetypes.guess_type(path.name)[0], None)
+
+
+def _file_response(path: Path, mime: Optional[str], file_name: Optional[str]) -> FileResponse:
+    mime = (mime or "application/octet-stream").lower()
     # MIME присылает клиент. Всё, что браузер мог бы исполнить на домене
     # консоли (HTML, SVG, XML…), отдаём только на скачивание — иначе клиент
     # прислал бы «документ» со скриптом и угнал сессию менеджера.
@@ -549,7 +663,7 @@ def get_media(
     return FileResponse(
         path,
         media_type=(mime if inline else "application/octet-stream"),
-        filename=(msg.file_name or path.name),
+        filename=(file_name or path.name),
         content_disposition_type=("inline" if inline else "attachment"),
         headers={
             "Cache-Control": "private, max-age=86400",
