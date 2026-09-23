@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
@@ -39,6 +40,7 @@ _TYPE_LABELS = {
     "video": "🎥 Видео",
     "audio": "🎵 Аудио",
     "voice": "🎤 Голосовое",
+    "sticker": "🏷 Стикер",
     "button": "🔘 Нажата кнопка",
     "system": "ℹ️ Системное",
 }
@@ -196,6 +198,39 @@ def is_taken_over_sync(channel: str, external_id: str) -> bool:
         db.close()
 
 
+def attach_media_sync(message_id: int, media: Dict[str, Any]) -> bool:
+    """
+    Дописывает к уже сохранённому сообщению сведения о скачанном файле
+    (media_path/media_mime/media_size) — слиянием в extra, не затирая
+    остальное (напр. button_id).
+
+    Отдельным шагом, а не в save_message: входящее сохраняется мгновенно,
+    а скачивание у Gupshup может занять десятки секунд — сообщение не должно
+    появляться в консоли с такой задержкой.
+    """
+    db = ChatSessionLocal()
+    try:
+        # Не COALESCE: пустой extra SQLAlchemy пишет как JSON null ('null'::jsonb),
+        # а не SQL NULL, и `'null' || '{...}'` в Postgres даёт МАССИВ, не объект.
+        db.execute(
+            text(
+                "UPDATE chat_messages "
+                "SET extra = (CASE WHEN jsonb_typeof(extra) = 'object' THEN extra "
+                "                  ELSE '{}'::jsonb END) || CAST(:media AS jsonb) "
+                "WHERE id = :id"
+            ),
+            {"media": json.dumps(media), "id": message_id},
+        )
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        logger.error("chat_store.attach_media_sync failed: %s", e, exc_info=True)
+        return False
+    finally:
+        db.close()
+
+
 def release_stale_takeovers_sync() -> int:
     """
     Возвращает боту диалоги, которые менеджер держит дольше
@@ -256,6 +291,14 @@ async def save_message(**kwargs: Any) -> Optional[int]:
     except Exception as e:
         logger.error("chat_store.save_message failed: %s", e, exc_info=True)
         return None
+
+
+async def attach_media(message_id: int, media: Dict[str, Any]) -> bool:
+    try:
+        return await asyncio.to_thread(attach_media_sync, message_id, media)
+    except Exception as e:
+        logger.error("chat_store.attach_media failed: %s", e, exc_info=True)
+        return False
 
 
 async def is_taken_over(channel: str, external_id: str) -> bool:

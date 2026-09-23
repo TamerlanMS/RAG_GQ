@@ -130,6 +130,18 @@ the bot for every client at once. Chat identity is `(channel, external_id)`; for
 is the **raw** Gupshup number that goes into `destination`, while `phone` is the normalized `+7…` form
 used only for search — never send to `Chat.phone`.
 
+**Attachments are downloaded to disk, not linked.** Gupshup media URLs expire and need the apikey, so
+`_process_message` downloads every image/video/audio/document/sticker right after the inbound insert
+(before the takeover gate — managers need the file most when they hold the chat) and
+`src/common/media_store.py` writes it to `MEDIA_DIR` (default `/app/media` = `./media` on the host,
+gitignored — back it up alongside `pgdata/`). The path/MIME/size are merged into
+`chat_messages.extra` by `chat_store.attach_media` — note empty `extra` is JSON `null`, not SQL NULL,
+so the merge uses `jsonb_typeof`, not `COALESCE`. The console serves files via
+`GET /console/media/{id}?exp&sig` — an HMAC-signed URL (secret `API_TOKEN`), not JWT, because
+`<img>/<video>` can't send `Authorization`. Client-supplied MIME is untrusted: only images/video/audio/PDF
+are served inline; everything else is forced to `attachment` + `application/octet-stream`, all with
+`CSP: sandbox`. The same downloaded bytes are reused for Vision and the Telegram forward.
+
 Real-time is short polling with an `after_id` cursor (chats 5s, thread 3s), not SSE/WebSocket: it
 self-heals across restarts and survives a topology change. Auth is bcrypt + JWT signed with `API_TOKEN`;
 seed managers with `docker compose exec api python scripts/seed_managers.py`.

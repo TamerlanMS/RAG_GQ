@@ -82,6 +82,11 @@ class MessageOut(BaseModel):
     text: Optional[str] = None
     msg_type: str
     file_name: Optional[str] = None
+    # Подписанная ссылка на скачанное вложение (см. src/common/media_store.py).
+    # None — у сообщения нет файла или скачать его у Gupshup не удалось.
+    media_url: Optional[str] = None
+    media_mime: Optional[str] = None
+    media_size: Optional[int] = None
     created_at: datetime
 
     # extra наружу намеренно не отдаём: там служебная кухня (combined_prompt, vision),

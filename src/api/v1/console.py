@@ -11,10 +11,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, aliased
 
-from src.common import chat_store
+from src.common import chat_store, media_store
 from src.common.auth import (
     burn_dummy_hash,
     check_login_rate,
@@ -134,6 +135,8 @@ def _chat_out(chat: Chat, holder: Optional[Manager] = None) -> ChatOut:
 
 
 def _message_out(msg: ChatMessage, manager_name: Optional[str] = None) -> MessageOut:
+    extra = msg.extra if isinstance(msg.extra, dict) else {}
+    has_media = bool(extra.get("media_path"))
     return MessageOut(
         id=msg.id,
         direction=msg.direction,
@@ -142,6 +145,9 @@ def _message_out(msg: ChatMessage, manager_name: Optional[str] = None) -> Messag
         text=msg.text,
         msg_type=msg.msg_type,
         file_name=msg.file_name,
+        media_url=(media_store.signed_url(msg.id) if has_media else None),
+        media_mime=(extra.get("media_mime") if has_media else None),
+        media_size=(extra.get("media_size") if has_media else None),
         created_at=msg.created_at,
     )
 
@@ -510,3 +516,49 @@ def get_stats(
             for r in by_manager_rows
         ],
     )
+
+
+@router.get("/media/{message_id}", tags=["console"])
+def get_media(
+    message_id: int,
+    exp: int = Query(...),
+    sig: str = Query(..., max_length=128),
+    db: Session = Depends(get_chat_db),
+) -> FileResponse:
+    """
+    Отдаёт вложение сообщения по подписанной ссылке из /chats/{id}/messages.
+
+    Без JWT намеренно: <img>/<video>/<audio> не умеют слать Authorization.
+    Доступ даёт подпись, которую получает только вошедший менеджер
+    (см. src/common/media_store.py). На любую проблему — один и тот же 404,
+    чтобы перебором id нельзя было узнать, у каких сообщений есть файлы.
+    """
+    not_found = HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Файл не найден")
+    if not media_store.verify_signature(message_id, exp, sig):
+        raise not_found
+    msg = db.get(ChatMessage, message_id)
+    extra = msg.extra if msg is not None and isinstance(msg.extra, dict) else {}
+    path = media_store.resolve_path(extra.get("media_path") or "") if extra.get("media_path") else None
+    if path is None:
+        raise not_found
+    mime = (extra.get("media_mime") or "application/octet-stream").lower()
+    # MIME присылает клиент. Всё, что браузер мог бы исполнить на домене
+    # консоли (HTML, SVG, XML…), отдаём только на скачивание — иначе клиент
+    # прислал бы «документ» со скриптом и угнал сессию менеджера.
+    inline = mime in _INLINE_MIME or mime.startswith(("video/", "audio/"))
+    return FileResponse(
+        path,
+        media_type=(mime if inline else "application/octet-stream"),
+        filename=(msg.file_name or path.name),
+        content_disposition_type=("inline" if inline else "attachment"),
+        headers={
+            "Cache-Control": "private, max-age=86400",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox",
+        },
+    )
+
+
+_INLINE_MIME = frozenset({
+    "image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf",
+})

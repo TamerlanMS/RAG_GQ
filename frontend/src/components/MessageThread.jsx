@@ -7,7 +7,67 @@ const TYPE_LABEL = {
   video: "🎥 Видео",
   audio: "🎵 Аудио",
   voice: "🎤 Голосовое",
+  sticker: "🏷 Стикер",
 };
+
+function formatSize(bytes) {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} КБ`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
+}
+
+// Вложение, скачанное на сервер. media_url — подписанная ссылка на
+// /api/v1/console/media/{id}, её можно ставить прямо в src.
+function Attachment({ msg }) {
+  const label = TYPE_LABEL[msg.msg_type] || "📎 Файл";
+  const url = msg.media_url;
+
+  if (!url) {
+    // Файл не скачался (или сообщение пришло до появления этой функции).
+    return (
+      <div className="bubble-attachment">
+        {label}
+        {msg.file_name ? ` — ${msg.file_name}` : ""}
+        <span className="attachment-missing"> · файл недоступен</span>
+      </div>
+    );
+  }
+
+  const mime = msg.media_mime || "";
+  const isImage = ["image", "sticker"].includes(msg.msg_type) && mime.startsWith("image/");
+
+  if (isImage) {
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="attachment-image-link">
+        <img
+          src={url}
+          alt={label}
+          loading="lazy"
+          className={msg.msg_type === "sticker" ? "attachment-sticker" : "attachment-image"}
+        />
+      </a>
+    );
+  }
+  if (msg.msg_type === "video" && mime.startsWith("video/")) {
+    return <video src={url} controls preload="metadata" className="attachment-video" />;
+  }
+  if (["audio", "voice"].includes(msg.msg_type) && mime.startsWith("audio/")) {
+    return <audio src={url} controls preload="metadata" className="attachment-audio" />;
+  }
+
+  // Документ либо медиа в формате, который браузер не покажет, — ссылкой.
+  const name = msg.file_name || label;
+  return (
+    <a href={url} target="_blank" rel="noreferrer" download={msg.file_name || undefined} className="attachment-file">
+      <span className="attachment-file-icon">📎</span>
+      <span className="attachment-file-meta">
+        <span className="attachment-file-name">{name}</span>
+        <span className="attachment-file-size">{formatSize(msg.media_size)}</span>
+      </span>
+    </a>
+  );
+}
 
 function MessageBubble({ msg }) {
   if (msg.author === "system") {
@@ -16,7 +76,7 @@ function MessageBubble({ msg }) {
 
   const side = msg.direction === "in" ? "left" : "right";
   const kind = msg.author; // client | bot | manager
-  const attachment = msg.msg_type !== "text" && msg.msg_type !== "button" ? TYPE_LABEL[msg.msg_type] : null;
+  const hasAttachment = msg.msg_type in TYPE_LABEL;
 
   return (
     <div className={`bubble-row is-${side}`}>
@@ -25,12 +85,7 @@ function MessageBubble({ msg }) {
           <div className="bubble-author">{msg.author_manager_name}</div>
         )}
         {kind === "bot" && <div className="bubble-author">Бот</div>}
-        {attachment && (
-          <div className="bubble-attachment">
-            {attachment}
-            {msg.file_name ? ` — ${msg.file_name}` : ""}
-          </div>
-        )}
+        {hasAttachment && <Attachment msg={msg} />}
         {msg.text && <div className="bubble-text">{msg.text}</div>}
         <div className="bubble-time">
           {formatClock(msg.created_at)}

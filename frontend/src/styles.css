@@ -495,6 +495,88 @@ button {
   margin-bottom: 3px;
 }
 
+.attachment-missing {
+  font-style: italic;
+}
+
+.attachment-image-link {
+  display: block;
+  margin: -2px -4px 4px;
+}
+
+.attachment-image {
+  display: block;
+  max-width: min(320px, 100%);
+  max-height: 360px;
+  border-radius: 6px;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+
+.attachment-sticker {
+  display: block;
+  width: 140px;
+  height: 140px;
+  object-fit: contain;
+}
+
+.attachment-video {
+  display: block;
+  max-width: min(360px, 100%);
+  max-height: 360px;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  background: #000;
+}
+
+.attachment-audio {
+  display: block;
+  /* Фиксированная ширина: у пузыря ширина по содержимому, и проценты
+     схлопывали плеер до одной кнопки. */
+  width: 300px;
+  max-width: 100%;
+  margin-bottom: 4px;
+}
+
+.attachment-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.05);
+  color: inherit;
+  text-decoration: none;
+  max-width: 320px;
+}
+
+.attachment-file:hover {
+  background: rgba(0, 0, 0, 0.09);
+}
+
+.attachment-file-icon {
+  font-size: 22px;
+}
+
+.attachment-file-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.attachment-file-name {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-file-size {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .bubble-text {
   white-space: pre-wrap;
   line-height: 1.4;

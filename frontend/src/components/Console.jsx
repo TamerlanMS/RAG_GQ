@@ -11,6 +11,25 @@ import { initials } from "../format.js";
 const CHATS_INTERVAL_MS = 5000;
 const MESSAGES_INTERVAL_MS = 3000;
 
+// Входящее с вложением появляется сразу, а файл сервер докачивает у Gupshup
+// чуть позже и дописывает к уже отданному сообщению. Такие сообщения
+// перечитываем при опросе, пока у них не появится media_url, — но не дольше
+// этого окна (если файл так и не скачался, дальше ждать бессмысленно).
+const MEDIA_TYPES = new Set(["image", "document", "video", "audio", "voice", "sticker"]);
+const MEDIA_WAIT_MS = 3 * 60 * 1000;
+
+function awaitingMediaId(messages) {
+  const now = Date.now();
+  const waiting = messages.filter(
+    (m) =>
+      !m.pending &&
+      MEDIA_TYPES.has(m.msg_type) &&
+      !m.media_url &&
+      now - new Date(m.created_at).getTime() < MEDIA_WAIT_MS,
+  );
+  return waiting.length ? Math.min(...waiting.map((m) => m.id)) : null;
+}
+
 export function Console({ manager, onLogout }) {
   // Совпадает с проверкой на бэкенде (require_director в src/common/auth.py):
   // code — стабильный идентификатор, а не отображаемая роль.
@@ -24,6 +43,8 @@ export function Console({ manager, onLogout }) {
 
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   const [threadLoading, setThreadLoading] = useState(false);
   const [threadError, setThreadError] = useState("");
 
@@ -88,20 +109,32 @@ export function Console({ manager, onLogout }) {
   }, [activeId]);
 
   // Инкрементальный дозабор: at after_id сервер почти всегда отдаёт пустой список.
+  // Если есть сообщение, ждущее файл, курсор временно откатывается к нему —
+  // тогда оно придёт повторно и заменит старую версию по id.
   const pollMessages = useCallback(async () => {
     const chatId = activeIdRef.current;
     if (chatId === null) return;
-    const data = await api.messages(chatId, { afterId: lastIdRef.current });
+    const waitingId = awaitingMediaId(messagesRef.current);
+    const afterId = waitingId !== null ? Math.min(lastIdRef.current ?? waitingId, waitingId - 1) : lastIdRef.current;
+    const data = await api.messages(chatId, { afterId });
     if (!data.items.length) return;
     if (activeIdRef.current !== chatId) return; // менеджер успел переключить чат
+    const known = new Set(messagesRef.current.filter((m) => !m.pending).map((m) => m.id));
+    const hasFresh = data.items.some((m) => !known.has(m.id));
+    const byId = new Map(data.items.map((m) => [m.id, m]));
     setMessages((prev) => {
-      const seen = new Set(prev.filter((m) => !m.pending).map((m) => m.id));
+      const settled = prev.filter((m) => !m.pending);
+      const updated = settled.map((m) => byId.get(m.id) || m);
+      const seen = new Set(settled.map((m) => m.id));
       const fresh = data.items.filter((m) => !seen.has(m.id));
-      if (!fresh.length) return prev;
-      return [...prev.filter((m) => !m.pending), ...fresh];
+      // Пришли новые — серверная версия заменяет оптимистичные (как и раньше).
+      if (fresh.length) return [...updated, ...fresh];
+      if (updated.every((m, i) => m === settled[i])) return prev;
+      return [...updated, ...prev.filter((m) => m.pending)];
     });
-    lastIdRef.current = data.items[data.items.length - 1].id;
-    api.markRead(chatId).catch(() => {});
+    const lastItemId = data.items[data.items.length - 1].id;
+    lastIdRef.current = Math.max(lastIdRef.current ?? 0, lastItemId);
+    if (hasFresh) api.markRead(chatId).catch(() => {});
   }, []);
 
   usePolling(pollMessages, MESSAGES_INTERVAL_MS, { enabled: activeId !== null, deps: [activeId] });

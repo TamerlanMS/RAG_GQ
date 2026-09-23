@@ -23,7 +23,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Request, Response
-from src.common import chat_store
+from src.common import chat_store, media_store
 from src.common.logger import logger
 from src.common.phone import normalize_phone
 from src.common.telegram_notifier import send_bytes_to_group, send_message_async
@@ -375,6 +375,7 @@ async def _process_message(
     button_id: str = "",
     media_url: str = "",
     msg_id: str = "",
+    mime_type: str = "",
 ) -> None:
     """
     Вся бизнес-логика: GPT → ответ клиенту → уведомление менеджера.
@@ -385,7 +386,7 @@ async def _process_message(
         # ── Зеркалирование входящего в веб-консоль ──────────────
         # Стоит ДО всех ветвлений: одна вставка покрывает и приветствие,
         # и нажатие кнопки, и файл, и основной путь.
-        await chat_store.save_message(
+        inbound_id = await chat_store.save_message(
             channel=CHANNEL_WHATSAPP,
             external_id=phone,
             direction="in",
@@ -400,6 +401,23 @@ async def _process_message(
             extra=({"button_id": button_id} if button_id else None),
             bump_unread=True,
         )
+
+        # ── Вложение: скачиваем сразу и кладём на диск для консоли ──
+        # До проверки перехвата: файл нужен менеджеру в первую очередь
+        # именно тогда, когда диалог ведёт он сам. Скачанные байты ниже
+        # переиспользуются (Vision, пересылка в Telegram) — второго
+        # запроса к Gupshup не будет.
+        # inbound_id is None — дубликат вебхука или сбой БД: файл уже
+        # сохранён при первой доставке либо его некуда привязать.
+        media_bytes: bytes | None = None
+        if msg_type in media_store.MEDIA_TYPES and (media_id or media_url):
+            media_bytes = await _download_media(media_id, media_url)
+            if media_bytes and inbound_id:
+                saved = await asyncio.to_thread(
+                    media_store.save_bytes, media_bytes, msg_type, file_name or None, mime_type or None
+                )
+                if saved:
+                    await chat_store.attach_media(inbound_id, saved)
 
         # ── Перехват: менеджер ведёт диалог сам, бот молчит ─────
         if await chat_store.is_taken_over(CHANNEL_WHATSAPP, phone):
@@ -447,7 +465,7 @@ async def _process_message(
             prompt_parts.append(f"Клиент написал: {text_body}")
 
         elif msg_type == "image" and (media_id or media_url):
-            image_bytes = await _download_media(media_id, media_url)
+            image_bytes = media_bytes
             if image_bytes:
                 try:
                     vision_text = await _gpt_vision(image_bytes, caption)
@@ -479,7 +497,7 @@ async def _process_message(
                 f"Тип: {msg_type} | {display}"
                 + (f"\nПодпись: {caption}" if caption else "")
             )
-            file_bytes = await _download_media(media_id, media_url)
+            file_bytes = media_bytes
             if file_bytes:
                 await send_bytes_to_group(file_bytes, display, msg_type, cap)
             else:
@@ -639,25 +657,31 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                 file_name = ""
                 button_id = ""
                 media_url = ""
+                mime_type = ""
 
                 if msg_type == "image":
                     img = msg.get("image", {})
                     caption   = img.get("caption", "")
                     media_id  = img.get("id", "")
                     media_url = img.get("url", "")
+                    mime_type = img.get("mime_type", "")
 
                 elif msg_type == "document":
                     doc = msg.get("document", {})
                     caption   = doc.get("caption", "")
                     media_id  = doc.get("id", "")
                     media_url = doc.get("url", "")
+                    mime_type = doc.get("mime_type", "")
                     file_name = doc.get("filename", "файл")
 
-                elif msg_type in ("video", "audio", "voice"):
+                elif msg_type in ("video", "audio", "voice", "sticker"):
+                    # Видео-кружок WhatsApp приходит как обычный type=video,
+                    # голосовое — как type=audio (с флагом voice=true).
                     media = msg.get(msg_type, {})
                     caption   = media.get("caption", "")
                     media_id  = media.get("id", "")
                     media_url = media.get("url", "")
+                    mime_type = media.get("mime_type", "")
 
                 elif msg_type == "interactive":
                     interactive = msg.get("interactive", {})
@@ -693,6 +717,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                     button_id=button_id,
                     media_url=media_url,
                     msg_id=msg_id,
+                    mime_type=mime_type,
                 )
 
     return Response(content="OK", status_code=200)
