@@ -14,6 +14,20 @@ TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
 TELEGRAM_API_URL = "https://api.telegram.org/bot{token}/sendMessage"
 
 
+def _migrated_chat_id(resp: httpx.Response) -> str | None:
+    """
+    Группу апгрейдили до супергруппы → Telegram отдаёт 400 с новым chat_id
+    в parameters.migrate_to_chat_id. Возвращаем его для повторной отправки.
+    """
+    if resp.status_code != 400:
+        return None
+    try:
+        new_id = resp.json().get("parameters", {}).get("migrate_to_chat_id")
+        return str(new_id) if new_id else None
+    except Exception:
+        return None
+
+
 async def send_message_async(text: str, chat_id: str | None = None) -> bool:
     """Async send text message to Telegram group (HTML parse mode)."""
     token = TELEGRAM_BOT_TOKEN
@@ -23,10 +37,22 @@ async def send_message_async(text: str, chat_id: str | None = None) -> bool:
         return False
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(
-                TELEGRAM_API_URL.format(token=token),
-                json={"chat_id": target, "text": text, "parse_mode": "HTML"},
-            )
+            url = TELEGRAM_API_URL.format(token=token)
+            payload = {"chat_id": target, "text": text, "parse_mode": "HTML"}
+            resp = await client.post(url, json=payload)
+
+            new_chat = _migrated_chat_id(resp)
+            if new_chat:
+                logger.warning("Chat migrated to supergroup %s — обновите TELEGRAM_CHAT_ID", new_chat)
+                payload["chat_id"] = new_chat
+                resp = await client.post(url, json=payload)
+
+            if resp.status_code != 200:
+                # Без тела ответа причину 400 не понять (chat not found / can't parse entities)
+                logger.error("sendMessage failed chat=%s: %s", payload["chat_id"], resp.text[:400])
+                # Последняя попытка — без HTML-разметки
+                resp = await client.post(url, json={"chat_id": payload["chat_id"], "text": text})
+
             resp.raise_for_status()
             return True
     except Exception as e:
@@ -145,20 +171,30 @@ async def send_bytes_to_group(
 
     try:
         async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(
-                f"https://api.telegram.org/bot{token}/{method}",
-                data={"chat_id": target, "caption": caption[:1024], "parse_mode": "HTML"},
-                files={field: (file_name, file_bytes)},
-            )
-            if resp.status_code != 200:
+
+            async def _post(m: str, f: str, chat: str):
+                return await client.post(
+                    f"https://api.telegram.org/bot{token}/{m}",
+                    data={"chat_id": chat, "caption": caption[:1024], "parse_mode": "HTML"},
+                    files={f: (file_name, file_bytes)},
+                )
+
+            resp = await _post(method, field, target)
+
+            new_chat = _migrated_chat_id(resp)
+            if new_chat:
+                logger.warning("Chat migrated to supergroup %s — обновите TELEGRAM_CHAT_ID", new_chat)
+                target = new_chat
+                resp = await _post(method, field, target)
+
+            # Фолбэк: фото/видео могло не пройти по размеру или формату — шлём документом
+            if resp.status_code != 200 and method != "sendDocument":
                 logger.error("send_bytes_to_group %s failed: %s", method, resp.text[:300])
-                # Фолбэк: фото могло не пройти по размеру/формату — шлём документом
-                if method != "sendDocument":
-                    resp = await client.post(
-                        f"https://api.telegram.org/bot{token}/sendDocument",
-                        data={"chat_id": target, "caption": caption[:1024], "parse_mode": "HTML"},
-                        files={"document": (file_name, file_bytes)},
-                    )
+                resp = await _post("sendDocument", "document", target)
+
+            if resp.status_code != 200:
+                logger.error("send_bytes_to_group failed chat=%s: %s", target, resp.text[:400])
+
             resp.raise_for_status()
             logger.info("send_bytes_to_group OK: %s (%s, %d bytes)", file_name, media_type, len(file_bytes))
             return True

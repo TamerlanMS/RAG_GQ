@@ -150,8 +150,24 @@ def _fmt_phone(phone: str) -> str:
     return f"+{d}" if d else phone
 
 
+def _esc(text: str) -> str:
+    """
+    Экранирование для parse_mode=HTML.
+
+    Без него сообщение клиента с '<', '>' или '&' валит sendMessage в 400
+    ("can't parse entities") — эскалация молча не доходит до менеджеров.
+    """
+    return (
+        (text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
 def _contact_line(sender_name: str, phone: str) -> str:
     """Строка контакта с кликабельной ссылкой на чат в WhatsApp."""
+    sender_name = _esc(sender_name)  # имя профиля задаёт клиент — может содержать '<'
     d = "".join(ch for ch in phone if ch.isdigit())
     return f'Клиент: {sender_name} — <a href="https://wa.me/{d}">{_fmt_phone(phone)}</a> (WhatsApp)'
 
@@ -575,8 +591,8 @@ async def _process_message(
             cap = (
                 f"📎 <b>ФАЙЛ (WhatsApp)</b>\n"
                 + _contact_line(sender_name, phone) + "\n"
-                f"Тип: {msg_type} | {display}"
-                + (f"\nПодпись: {caption}" if caption else "")
+                f"Тип: {msg_type} | {_esc(display)}"
+                + (f"\nПодпись: {_esc(caption)}" if caption else "")
             )
             file_bytes = media_bytes
             if file_bytes:
@@ -614,8 +630,8 @@ async def _process_message(
             cap = (
                 f"📸 <b>ФОТО (WhatsApp)</b>\n"
                 + _contact_line(sender_name, phone) + ""
-                + (f"\nПодпись: {caption}" if caption else "")
-                + (f"\nVision: {vision_text}" if vision_text else "\nVision: не определено")
+                + (f"\nПодпись: {_esc(caption)}" if caption else "")
+                + (f"\nVision: {_esc(vision_text)}" if vision_text else "\nVision: не определено")
             )
             if image_bytes:
                 await send_bytes_to_group(image_bytes, "photo.jpg", "image", cap)
@@ -626,14 +642,14 @@ async def _process_message(
             await send_message_async(
                 f"🔔 <b>ЭСКАЛАЦИЯ (WhatsApp)</b>\n"
                 + _contact_line(sender_name, phone) + "\n"
-                f"Сообщение клиента: {(text_body or caption)[:300]}\n"
-                f"Принял бот: {answer[:400]}"
+                f"Сообщение клиента: {_esc((text_body or caption)[:300])}\n"
+                f"Принял бот: {_esc(answer[:400])}"
             )
         elif triggered and text_body:
             await send_message_async(
                 f"💬 <b>ОБРАЩЕНИЕ (WhatsApp)</b>\n"
                 + _contact_line(sender_name, phone) + "\n"
-                f"Сообщение: {text_body[:500]}"
+                f"Сообщение: {_esc(text_body[:500])}"
             )
 
     except BaseException as e:
