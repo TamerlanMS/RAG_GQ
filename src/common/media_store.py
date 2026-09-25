@@ -33,6 +33,43 @@ from src.common.logger import logger
 
 MEDIA_DIR: Path = Path(os.getenv("MEDIA_DIR", "/app/media"))
 
+# В python:3.10-slim нет /etc/mime.types, и mimetypes не знает .ogg, .m4a,
+# .webp, .docx/.xlsx/.pptx, а .3gp считает аудио. Тип файла по расширению
+# здесь критичен: WhatsApp проверяет Content-Type, с которым Gupshup скачивает
+# файл по ссылке, и отвергает application/octet-stream
+# («Unsupported Audio mime type application/octet-stream», код 131053).
+_EXT_MIME = {
+    ".ogg": "audio/ogg",
+    ".opus": "audio/ogg",
+    ".oga": "audio/ogg",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".amr": "audio/amr",
+    ".mp4": "video/mp4",
+    ".3gp": "video/3gpp",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".pdf": "application/pdf",
+    ".txt": "text/plain",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+for _ext, _mime in _EXT_MIME.items():
+    mimetypes.add_type(_mime, _ext)
+
+
+def mime_for_name(name: str) -> str:
+    """MIME по расширению имени файла; application/octet-stream, если неизвестно."""
+    ext = Path(name or "").suffix.lower()
+    return _EXT_MIME.get(ext) or mimetypes.guess_type(name or "")[0] or "application/octet-stream"
+
 # Типы сообщений, у которых есть файл.
 MEDIA_TYPES = frozenset({"image", "document", "video", "audio", "voice", "sticker"})
 

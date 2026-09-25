@@ -211,12 +211,36 @@ for label, ext, codec, mime in [("Chrome WebM/Opus", "webm", "libopus", "audio/w
         check(f"{label}: кодек opus, моно", st.get("codec_name") == "opus" and st.get("channels") == 1, str(st))
         dur = float((info.get("format") or {}).get("duration") or 0)
         check(f"{label}: длительность сохранена (~2 с)", 1.5 < dur < 2.6, str(dur))
+    vrel = q1("SELECT extra->>'media_path' FROM chat_messages WHERE id=:i", i=m.get("id") or 0)
+    if vrel:
+        g = httpx.get(BASE + media_store.signed_path_url(vrel), timeout=25)
+        # Именно этот заголовок проверяет WhatsApp (ошибка 131053 при octet-stream).
+        check(f"{label}: Gupshup получает Content-Type audio/ogg; codecs=opus",
+              g.headers.get("content-type") == "audio/ogg; codecs=opus", g.headers.get("content-type"))
 last = q1("SELECT text FROM chat_messages WHERE chat_id=:c AND author='manager' ORDER BY id DESC LIMIT 1", c=cid3)
 check("подпись не ушла отдельным сообщением", not last, str(last))
 r = httpx.post(f"{API}/chats/{cid3}/reply-file", headers=auth(T), timeout=60,
                files={"file": ("voice.webm", os.urandom(2000), "audio/webm")}, data={"voice": "true"})
 check("мусор вместо записи -> 400 с понятным текстом",
       r.status_code == 400 and "запис" in r.json().get("detail", ""), f"{r.status_code} {r.text[:120]}")
+
+section("6c. Документы: Gupshup получает настоящий тип, браузер — только скачивание")
+DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+for name, mime in [("договор.docx", DOCX), ("смета.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")]:
+    r = send_file(cid3, name, b"PK" + os.urandom(300), mime)
+    m = (r.json().get("message") or {}) if r.status_code == 200 else {}
+    rel = q1("SELECT extra->>'media_path' FROM chat_messages WHERE id=:i", i=m.get("id") or 0)
+    g = httpx.get(BASE + media_store.signed_path_url(rel), timeout=25) if rel else None
+    check(f"{name}: media-out Content-Type = {mime}", g is not None and g.headers.get("content-type") == mime,
+          g.headers.get("content-type") if g is not None else r.text[:120])
+    check(f"{name}: media-out — attachment", g is not None and g.headers.get("content-disposition", "").startswith("attachment"))
+    c = httpx.get(BASE + m["media_url"], timeout=25) if m.get("media_url") else None
+    check(f"{name}: в консоли по-прежнему octet-stream + attachment",
+          c is not None and c.headers.get("content-type", "").startswith("application/octet-stream")
+          and c.headers.get("content-disposition", "").startswith("attachment"))
+check("mime_for_name: .3gp — видео, а не аудио", media_store.mime_for_name("a.3gp") == "video/3gpp")
+check("mime_for_name: .webp и .m4a известны",
+      media_store.mime_for_name("a.webp") == "image/webp" and media_store.mime_for_name("a.m4a") == "audio/mp4")
 
 section("7. Формат запроса к Gupshup (dry-run выключен, Gupshup подменён)")
 captured = []

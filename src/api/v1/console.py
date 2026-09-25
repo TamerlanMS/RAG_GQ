@@ -8,7 +8,6 @@ API менеджерской веб-консоли.
 from __future__ import annotations
 
 import asyncio
-import mimetypes
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Tuple
@@ -666,18 +665,28 @@ def get_outgoing_media(
     path = media_store.resolve_path(p) if media_store.verify_path_signature(p, exp, sig) else None
     if path is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Файл не найден")
-    return _file_response(path, mimetypes.guess_type(path.name)[0], None)
+    mime = media_store.mime_for_name(path.name)
+    # WhatsApp принимает голосовое только как OGG/Opus и сверяет именно эту
+    # строку; наши .ogg — всегда Opus (media_store.to_whatsapp_voice).
+    if mime == "audio/ogg":
+        mime = "audio/ogg; codecs=opus"
+    # Файл забирает Gupshup, а не браузер менеджера: настоящий Content-Type
+    # отдаём всегда (с octet-stream WhatsApp отвергает и документы), а от
+    # исполнения в браузере защищают attachment + CSP sandbox + nosniff.
+    return _file_response(path, mime, None, real_type=True)
 
 
-def _file_response(path: Path, mime: Optional[str], file_name: Optional[str]) -> FileResponse:
+def _file_response(
+    path: Path, mime: Optional[str], file_name: Optional[str], *, real_type: bool = False
+) -> FileResponse:
     mime = (mime or "application/octet-stream").lower()
     # MIME присылает клиент. Всё, что браузер мог бы исполнить на домене
     # консоли (HTML, SVG, XML…), отдаём только на скачивание — иначе клиент
     # прислал бы «документ» со скриптом и угнал сессию менеджера.
-    inline = mime in _INLINE_MIME or mime.startswith(("video/", "audio/"))
+    inline = mime.split(";")[0].strip() in _INLINE_MIME or mime.startswith(("video/", "audio/"))
     return FileResponse(
         path,
-        media_type=(mime if inline else "application/octet-stream"),
+        media_type=(mime if inline or real_type else "application/octet-stream"),
         filename=(file_name or path.name),
         content_disposition_type=("inline" if inline else "attachment"),
         headers={
