@@ -269,7 +269,7 @@ svg {
 .login-band {
   position: absolute;
   inset: 0 0 auto 0;
-  height: 222px;
+  height: 128px;
   background: var(--accent);
 }
 
@@ -279,7 +279,7 @@ svg {
   gap: 10px;
   max-width: 960px;
   margin: 0 auto;
-  padding: 26px 16px;
+  padding: 18px 16px;
   color: #fff;
   font-size: 15px;
   font-weight: 600;
@@ -290,7 +290,7 @@ svg {
   position: relative;
   width: 100%;
   max-width: 960px;
-  margin-top: 100px;
+  margin-top: 70px;
   display: grid;
   grid-template-columns: 1.15fr 1fr;
   background: var(--panel);
@@ -1554,17 +1554,18 @@ svg {
   }
 
   .login-band {
-    height: 170px;
+    height: calc(96px + env(safe-area-inset-top));
   }
 
   .login-brand {
-    padding: calc(20px + env(safe-area-inset-top)) 16px 20px;
+    padding: calc(14px + env(safe-area-inset-top)) 16px 14px;
+    font-size: 14px;
   }
 
   /* На телефоне — только форма; описание консоли сокращаем до заголовка. */
   .login-card {
     grid-template-columns: 1fr;
-    margin-top: 80px;
+    margin-top: calc(56px + env(safe-area-inset-top));
   }
 
   .login-intro {
