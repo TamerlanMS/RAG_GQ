@@ -254,41 +254,70 @@ def delete(rel: str) -> None:
 VOICE_MAX_SECONDS = 15 * 60
 
 
+def _probe_audio(path: Path) -> tuple:
+    """(кодек, число каналов) первой аудиодорожки или (None, 0)."""
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a:0",
+             "-show_entries", "stream=codec_name,channels", "-of", "csv=p=0", str(path)],
+            capture_output=True, timeout=30,
+        )
+        parts = proc.stdout.decode(errors="replace").strip().lower().split(",")
+        return (parts[0] or None), (int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0)
+    except Exception as e:
+        logger.warning("media_store: ffprobe не запустился: %s", e)
+        return None, 0
+
+
+def _run_ffmpeg(args: list) -> bool:
+    import subprocess
+
+    try:
+        proc = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *args],
+                              capture_output=True, timeout=120)
+    except Exception as e:
+        logger.error("media_store: ffmpeg не запустился: %s", e)
+        return False
+    if proc.returncode != 0:
+        logger.warning("media_store: ffmpeg rc=%s: %s", proc.returncode,
+                       proc.stderr.decode(errors="replace")[:300])
+    return proc.returncode == 0
+
+
 def to_whatsapp_voice(data: bytes) -> Optional[bytes]:
     """
-    Перекодирует запись из браузера в OGG/Opus моно — единственный формат,
-    который WhatsApp показывает клиенту как голосовое (с волной), а не как
-    аудиофайл. Вход — что угодно, что понимает ffmpeg (WebM из Chrome/Firefox,
-    MP4/AAC из Safari). None — ffmpeg не справился (битый файл, не аудио).
+    Готовит запись из браузера как голосовое WhatsApp: OGG-контейнер с Opus —
+    единственный формат, который WhatsApp показывает голосовым (с волной),
+    а не аудиофайлом. None — запись битая или это не аудио.
+
+    Качество: раньше всё пережималось в 32 кбит/с «voip», и речь становилась
+    неразборчивой. Теперь моно-Opus (Firefox, часть Android) не перекодируется
+    вовсе — только перекладывается из WebM в OGG (-c:a copy, без потерь).
+    Остальное — стерео-Opus от Chrome (он пишет стерео даже с моно-микрофона,
+    а голосовые WhatsApp моно), MP4/AAC из Safari — сводится в моно Opus
+    96 кбит/с в режиме полного качества: на речи это на слух без потерь.
 
     Через временные файлы, а не pipe: у MP4 из Safari индекс (moov) бывает
     в конце файла, и из несикаемого потока ffmpeg его не прочитает.
     """
-    import subprocess
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / "in"
         dst = Path(tmp) / "out.ogg"
         src.write_bytes(data)
-        try:
-            proc = subprocess.run(
-                [
-                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-                    "-i", str(src),
-                    "-vn", "-ac", "1", "-ar", "48000",
-                    "-c:a", "libopus", "-b:a", "32k", "-application", "voip",
-                    "-t", str(VOICE_MAX_SECONDS),
-                    str(dst),
-                ],
-                capture_output=True,
-                timeout=120,
-            )
-        except Exception as e:
-            logger.error("media_store.to_whatsapp_voice: ffmpeg не запустился: %s", e)
-            return None
-        if proc.returncode != 0 or not dst.is_file() or dst.stat().st_size == 0:
-            logger.warning("media_store.to_whatsapp_voice: ffmpeg rc=%s: %s",
-                           proc.returncode, proc.stderr.decode(errors="replace")[:300])
+
+        ok = False
+        codec, channels = _probe_audio(src)
+        if codec == "opus" and channels == 1:
+            ok = _run_ffmpeg(["-i", str(src), "-vn", "-map", "0:a:0", "-c:a", "copy",
+                              "-t", str(VOICE_MAX_SECONDS), str(dst)])
+        if not ok or not dst.is_file() or dst.stat().st_size == 0:
+            ok = _run_ffmpeg(["-i", str(src), "-vn", "-ac", "1", "-ar", "48000",
+                              "-c:a", "libopus", "-b:a", "96k", "-application", "audio",
+                              "-t", str(VOICE_MAX_SECONDS), str(dst)])
+        if not ok or not dst.is_file() or dst.stat().st_size == 0:
             return None
         return dst.read_bytes()

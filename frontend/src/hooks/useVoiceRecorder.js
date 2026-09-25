@@ -46,13 +46,22 @@ export function useVoiceRecorder() {
     }
     let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Моно, как у голосовых WhatsApp; шумоподавление и автоусиление —
+      // стандартные для речи, оставляем включёнными явно.
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
     } catch {
       setError("Нет доступа к микрофону — разрешите его в настройках браузера");
       return;
     }
     const mimeType = pickMimeType();
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    // 128 кбит/с: для Opus сервер звук не пережимает (только меняет
+    // контейнер), так что это и есть качество, которое услышит клиент.
+    const recorder = new MediaRecorder(stream, {
+      ...(mimeType ? { mimeType } : {}),
+      audioBitsPerSecond: 128000,
+    });
     chunksRef.current = [];
     recorder.ondataavailable = (e) => {
       if (e.data.size) chunksRef.current.push(e.data);

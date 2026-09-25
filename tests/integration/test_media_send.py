@@ -171,12 +171,13 @@ section("6b. Голосовое из консоли: перекодирован�
 import tempfile
 
 
-def make_audio(ext, codec):
+def make_audio(ext, codec, bitrate="96k", channels=1):
     """Настоящая запись, как её отдаёт браузер: Chrome — WebM/Opus, Safari — MP4/AAC."""
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, "rec." + ext)
         subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
-                        "-i", "sine=frequency=440:duration=2", "-c:a", codec, out], check=True)
+                        "-i", "anoisesrc=d=2:c=pink:a=0.3", "-ac", str(channels), "-c:a", codec, "-b:a", bitrate, out],
+                       check=True)
         return open(out, "rb").read()
 
 
@@ -192,9 +193,11 @@ def probe(data):
 
 check("ffmpeg есть в образе", subprocess.run(["ffmpeg", "-version"], capture_output=True).returncode == 0)
 cid3, _ = new_chat()
-for label, ext, codec, mime in [("Chrome WebM/Opus", "webm", "libopus", "audio/webm;codecs=opus"),
-                                ("Safari MP4/AAC", "m4a", "aac", "audio/mp4")]:
-    data = make_audio(ext, codec)
+for label, ext, codec, mime, ch in [
+        ("Firefox WebM/Opus моно", "webm", "libopus", "audio/webm;codecs=opus", 1),
+        ("Chrome WebM/Opus стерео", "webm", "libopus", "audio/webm;codecs=opus", 2),
+        ("Safari MP4/AAC", "m4a", "aac", "audio/mp4", 1)]:
+    data = make_audio(ext, codec, channels=ch)
     r = httpx.post(f"{API}/chats/{cid3}/reply-file", headers=auth(T), timeout=60,
                    files={"file": ("voice." + ext, data, mime)},
                    data={"caption": "не должна уйти", "take_over": "true", "voice": "true"})
@@ -211,6 +214,11 @@ for label, ext, codec, mime in [("Chrome WebM/Opus", "webm", "libopus", "audio/w
         check(f"{label}: кодек opus, моно", st.get("codec_name") == "opus" and st.get("channels") == 1, str(st))
         dur = float((info.get("format") or {}).get("duration") or 0)
         check(f"{label}: длительность сохранена (~2 с)", 1.5 < dur < 2.6, str(dur))
+        kbps = len(f.content) * 8 / 1000 / dur if dur else 0
+        # Opus из Chrome не пережимается (было 32 кбит/с «voip» — неразборчиво);
+        # AAC из Safari перекодируется в 64 кбит/с.
+        want = 70
+        check(f"{label}: качество не урезано (≥{want} кбит/с)", kbps >= want, f"{kbps:.0f} кбит/с")
     vrel = q1("SELECT extra->>'media_path' FROM chat_messages WHERE id=:i", i=m.get("id") or 0)
     if vrel:
         g = httpx.get(BASE + media_store.signed_path_url(vrel), timeout=25)
