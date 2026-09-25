@@ -56,7 +56,7 @@ check("а вот на защищённом роуте 401 остаётся пр�
 section("ИСПРАВЛЕНИЕ 2: фильтр mine — по конкретному менеджеру")
 
 # Набор не должен зависеть от порядка запуска: сами создаём расклад —
-# один диалог у Ивановой, один у Калбаевой, остальные у бота.
+# один диалог у Ивановой, один у Айтейбаевой, остальные у бота.
 _ids = [r[0] for r in qall("SELECT id FROM chats ORDER BY id")]
 assert len(_ids) >= 2, "нужно минимум 2 чата"
 for _i in _ids:
@@ -77,12 +77,12 @@ bot = httpx.get(API + "/chats", params={"taken_over": "false"}, headers=HS, time
 check("mine для Ивановой -> только её диалоги",
       all((c["taken_over_by"] or {}).get("name", "").startswith("Иванова") for c in a["items"])
       and a["total"] > 0, f"{a['total']} шт.")
-check("mine для Калбаевой -> только её диалоги",
-      all((c["taken_over_by"] or {}).get("name", "").startswith("Калбаева") for c in b["items"])
+check("mine для Айтейбаевой -> только её диалоги",
+      all((c["taken_over_by"] or {}).get("name", "").startswith("Айтейбаева") for c in b["items"])
       and b["total"] > 0, f"{b['total']} шт.")
 check("выборки двух менеджеров не пересекаются",
       not ({c["id"] for c in a["items"]} & {c["id"] for c in b["items"]}))
-check("mine(Иванова) + mine(Калбаева) == taken_over=true",
+check("mine(Иванова) + mine(Айтейбаева) == taken_over=true",
       a["total"] + b["total"] == allt["total"] == taken_total,
       f"{a['total']}+{b['total']} vs {allt['total']} (в БД {taken_total})")
 check("taken_over=false -> ни у одного нет держателя",

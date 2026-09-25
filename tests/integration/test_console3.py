@@ -191,7 +191,7 @@ r = httpx.post(f"{API}/chats/{chat1}/takeover", headers=auth(T_KAL), json={}, ti
 check("takeover -> 200", r.status_code == 200, f"HTTP {r.status_code}")
 body = r.json()
 check("чат помечен перехваченным", body["chat"]["is_taken_over"] is True)
-check("указан держатель", body["chat"]["taken_over_by"]["name"].startswith("Калбаева"),
+check("указан держатель", body["chat"]["taken_over_by"]["name"].startswith("Айтейбаева"),
       str(body["chat"]["taken_over_by"]))
 sys_cnt = q1("SELECT count(*) FROM chat_messages WHERE chat_id=:c AND author='system'", c=chat1)
 check("создано системное сообщение", sys_cnt == 1, f"{sys_cnt} шт.")
@@ -203,7 +203,7 @@ check("второе системное сообщение НЕ создано",
 
 r = httpx.post(f"{API}/chats/{chat1}/takeover", headers=auth(T_SAB), json={}, timeout=25)
 check("другой менеджер без force -> 409", r.status_code == 409, f"HTTP {r.status_code}")
-check("в тексте ошибки указан текущий держатель", "Калбаева" in r.json()["detail"],
+check("в тексте ошибки указан текущий держатель", "Айтейбаева" in r.json()["detail"],
       r.json()["detail"])
 
 r = httpx.post(f"{API}/chats/{chat1}/reply", headers=auth(T_SAB),
@@ -216,7 +216,7 @@ check("force=true перехватывает", r.status_code == 200 and
       r.json()["chat"]["taken_over_by"]["name"].startswith("Иванова"),
       str(r.json()["chat"]["taken_over_by"]))
 
-# Возвращаем Калбаевой
+# Возвращаем Айтейбаевой
 httpx.post(f"{API}/chats/{chat1}/release", headers=auth(T_SAB), timeout=25)
 httpx.post(f"{API}/chats/{chat1}/takeover", headers=auth(T_KAL), json={}, timeout=25)
 
@@ -247,7 +247,7 @@ check("вернулось созданное сообщение", body.get("mess
 if body.get("message"):
     m = body["message"]
     check("author=manager", m["author"] == "manager", m["author"])
-    check("указано имя менеджера", (m.get("author_manager_name") or "").startswith("Калбаева"),
+    check("указано имя менеджера", (m.get("author_manager_name") or "").startswith("Айтейбаева"),
           str(m.get("author_manager_name")))
     check("author_manager_id проставлен в БД",
           q1("SELECT author_manager_id FROM chat_messages WHERE id=:i", i=m["id"]) is not None)

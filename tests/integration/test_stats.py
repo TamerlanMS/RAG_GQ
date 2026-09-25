@@ -73,7 +73,7 @@ def wait_for(fn, timeout=25, interval=0.5):
 
 # Набор не должен зависеть от того, что сделали с паролями другие файлы
 # батареи, запущенные раньше (test_console.py сбрасывает пароль ВСЕХ
-# менеджеров, test_fixes.py отдельно меняет пароль Калбаевой) — сами
+# менеджеров, test_fixes.py отдельно меняет пароль Айтейбаевой) — сами
 # задаём пароли перед входом.
 PW = "TestPass_stats_123"
 for code in ("director", "kalbaeva"):
@@ -116,7 +116,7 @@ webhook(P2, "Здравствуйте", name="Стата Два")
 wait_for(lambda: q1("SELECT count(*) FROM chats WHERE external_id=:p", p=P2) == 1)
 cid2 = q1("SELECT id FROM chats WHERE external_id=:p", p=P2)
 
-# Менеджер (Калбаева) отвечает только в P1 -> P2 остаётся "без ответа менеджера".
+# Менеджер (Айтейбаева) отвечает только в P1 -> P2 остаётся "без ответа менеджера".
 httpx.post(f"{API}/chats/{cid1}/reply", headers=auth(T_KAL), timeout=30,
            json={"text": "Автомат IEK есть, уточните количество.", "take_over": True})
 httpx.post(f"{API}/chats/{cid1}/release", headers=auth(T_KAL), timeout=25)
@@ -146,14 +146,14 @@ db_never = q1(
 check("never_replied_chats совпадает с прямым запросом", data["never_replied_chats"] == db_never,
       f"API={data['never_replied_chats']} DB={db_never}")
 
-kal_row = next((m for m in data["by_manager"] if m["manager_name"].startswith("Калбаева")), None)
-check("Калбаева попала в by_manager", kal_row is not None)
+kal_row = next((m for m in data["by_manager"] if m["manager_name"].startswith("Айтейбаева")), None)
+check("Айтейбаева попала в by_manager", kal_row is not None)
 db_kal_handled = q1(
     "SELECT count(DISTINCT chat_id) FROM chat_messages "
     "WHERE author='manager' AND author_manager_id=2 AND chat_id IN "
     "(SELECT id FROM chats WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'UTC'))"
 )
-check("chats_handled Калбаевой совпадает с БД", kal_row and kal_row["chats_handled"] == db_kal_handled,
+check("chats_handled Айтейбаевой совпадает с БД", kal_row and kal_row["chats_handled"] == db_kal_handled,
       f"API={kal_row['chats_handled'] if kal_row else '?'} DB={db_kal_handled}")
 
 all_manager_ids = {m["manager_id"] for m in data["by_manager"]}
