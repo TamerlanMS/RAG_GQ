@@ -87,7 +87,7 @@ n_bot = q1("SELECT count(*) FROM chat_messages WHERE chat_id=:c AND author='bot'
 check("исходящих от бота при этом несколько", n_bot >= 2, f"{n_bot} шт.")
 
 # /read
-r = httpx.post(API + "/login", json={"phone": "87750866676", "password": "NewPass_kalbaeva_456"},
+r = httpx.post(API + "/login", json={"phone": "87770791494", "password": "NewPass_kalbaeva_456"},
                timeout=25)
 T = r.json()["access_token"]
 H = {"Authorization": f"Bearer {T}"}

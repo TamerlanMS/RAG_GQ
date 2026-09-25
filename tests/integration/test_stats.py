@@ -83,7 +83,7 @@ for code in ("director", "kalbaeva"):
 T_DIR = httpx.post(API + "/login", timeout=25,
                    json={"phone": "87710010254", "password": PW}).json()["access_token"]
 T_KAL = httpx.post(API + "/login", timeout=25,
-                   json={"phone": "87750866676", "password": PW}).json()["access_token"]
+                   json={"phone": "87770791494", "password": PW}).json()["access_token"]
 
 section("16. ДОСТУП: только директор")
 

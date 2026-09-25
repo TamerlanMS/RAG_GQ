@@ -66,10 +66,10 @@ def wait_for(fn, timeout=30):
 
 
 T_KAL = httpx.post(API + "/login", timeout=25,
-                   json={"phone": "87750866676", "password": "NewPass_kalbaeva_456"}
+                   json={"phone": "87770791494", "password": "NewPass_kalbaeva_456"}
                    ).json()["access_token"]
 T_SAB = httpx.post(API + "/login", timeout=25,
-                   json={"phone": "87711668284", "password": "TestPass_sabieva_123"}
+                   json={"phone": "87710225844", "password": "TestPass_ivanova_123"}
                    ).json()["access_token"]
 HK = {"Authorization": f"Bearer {T_KAL}"}
 HS = {"Authorization": f"Bearer {T_SAB}"}

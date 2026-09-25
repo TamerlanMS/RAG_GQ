@@ -17,7 +17,7 @@ WEBHOOK_TOKEN = os.getenv("GUPSHUP_VERIFY_TOKEN", "gqgroup_verify")
 _results = []
 
 PASSWORDS = {c: "TestPass_" + c + "_123" for c in
-             ("director", "sabieva", "zhenibek", "dolakov")}
+             ("director", "ivanova", "zhenibek", "mukhanov")}
 PASSWORDS["kalbaeva"] = "NewPass_kalbaeva_456"
 
 
@@ -119,17 +119,17 @@ except Exception as e:
 # ─────────────────────────────────────────────────────────────
 section("3b. ОГРАНИЧЕНИЕ ПЕРЕБОРА ПАРОЛЯ")
 
-# dolakov используется только здесь — после теста его номер заблокирован на 15 мин.
+# mukhanov используется только здесь — после теста его номер заблокирован на 15 мин.
 codes = []
 for i in range(6):
-    codes.append(login("87086110592", "wrong" + str(i)).status_code)
+    codes.append(login("87715259591", "wrong" + str(i)).status_code)
 check("первые 5 неудачных попыток -> 401", codes[:5] == [401] * 5, str(codes[:5]))
 check("6-я попытка -> 429 (сработал лимит)", codes[5] == 429, f"получено {codes[5]}")
-r_locked = login("87086110592", PASSWORDS["dolakov"])
+r_locked = login("87715259591", PASSWORDS["mukhanov"])
 check("верный пароль при блокировке тоже -> 429", r_locked.status_code == 429,
       f"HTTP {r_locked.status_code}")
 check("блокировка не задевает других менеджеров",
-      login("87711668284", PASSWORDS["sabieva"]).status_code == 200)
+      login("87710225844", PASSWORDS["ivanova"]).status_code == 200)
 
 
 # ─────────────────────────────────────────────────────────────

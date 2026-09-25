@@ -11,7 +11,14 @@
     # посмотреть, что будет сделано, ничего не меняя
     docker compose exec api python scripts/seed_managers.py --dry-run
 
+    # отключить в базе тех, кого убрали из config.MANAGERS (уволились)
+    docker compose exec api python scripts/seed_managers.py --deactivate-missing
+
 Скрипт идемпотентен: повторный запуск не сбрасывает уже заданные пароли.
+
+Менеджеров НЕ удаляем, а отключаем (is_active=false): войти он больше не
+сможет, но его ответы в переписке и строки статистики за прошлые периоды
+остаются привязаны к нему. Вернули в config.MANAGERS — включится снова.
 
 Пароли печатаются через print, а НЕ через logger — иначе они попадут
 в logs/app.log (в src/common/logger.py включён файловый обработчик).
@@ -41,6 +48,11 @@ def main() -> int:
     parser.add_argument("--code", help="Обработать только этого менеджера (director/kalbaeva/...)")
     parser.add_argument("--password", help="Задать конкретный пароль (иначе генерируется случайный)")
     parser.add_argument("--dry-run", action="store_true", help="Ничего не менять, только показать")
+    parser.add_argument(
+        "--deactivate-missing",
+        action="store_true",
+        help="Отключить в базе менеджеров, которых нет в config.MANAGERS (вход для них закроется)",
+    )
     args = parser.parse_args()
 
     if args.password and not args.code:
@@ -108,6 +120,9 @@ def main() -> int:
             if existing.phone != phone:
                 changes.append("phone")
                 existing.phone = phone
+            if not existing.is_active:
+                changes.append("снова включён")
+                existing.is_active = True
 
             # ...кроме случая, когда пароль задан явно.
             if args.password:
@@ -122,6 +137,17 @@ def main() -> int:
                 updated.append((m["name"], phone, args.password if args.password else None))
             else:
                 skipped.append(m["name"])
+
+        deactivated: list = []
+        if args.deactivate_missing:
+            known = {m["id"] for m in MANAGERS}
+            for extra in db.query(Manager).filter(Manager.is_active.is_(True)).all():
+                if extra.code not in known:
+                    if args.dry_run:
+                        print(f"[dry-run] ОТКЛЮЧИЛ БЫ: {extra.code} ({extra.name})")
+                        continue
+                    extra.is_active = False
+                    deactivated.append(extra.name)
 
         if args.dry_run:
             db.rollback()
@@ -145,7 +171,9 @@ def main() -> int:
             print(f"  {name} — {phone}{suffix}")
     if skipped:
         print(f"=== БЕЗ ИЗМЕНЕНИЙ: {', '.join(skipped)} ===")
-    if not (created or updated or skipped):
+    if deactivated:
+        print(f"=== ОТКЛЮЧЕНЫ (нет в config.MANAGERS): {', '.join(deactivated)} ===")
+    if not (created or updated or skipped or deactivated):
         print("Нечего делать.")
 
     print("\nСменить пароль можно через POST /api/v1/console/me/password.")

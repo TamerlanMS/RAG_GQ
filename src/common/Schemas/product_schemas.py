@@ -68,7 +68,7 @@ class Order(BaseModel):
         default="director",
         description=(
             "ID менеджера, которому направить заказ. "
-            "Значения: director | kalbaeva | sabieva | zhenibek | dolakov. "
+            "Значения: director | kalbaeva | zhenibek | ivanova | mukhanov. "
             "По умолчанию — director (руководитель)."
         ),
     )

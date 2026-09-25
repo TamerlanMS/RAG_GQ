@@ -14,7 +14,7 @@ API = BASE + "/api/v1/console"
 WEBHOOK_TOKEN = os.getenv("GUPSHUP_VERIFY_TOKEN", "gqgroup_verify")
 _results = []
 
-PW = {"director": "TestPass_director_123", "sabieva": "TestPass_sabieva_123",
+PW = {"director": "TestPass_director_123", "ivanova": "TestPass_ivanova_123",
       "zhenibek": "TestPass_zhenibek_123", "kalbaeva": "NewPass_kalbaeva_456"}
 
 
@@ -77,8 +77,8 @@ def wait_for(fn, timeout=25, interval=0.5):
     return False
 
 
-T_KAL = tok("kalbaeva", "87750866676")
-T_SAB = tok("sabieva", "87711668284")
+T_KAL = tok("kalbaeva", "87770791494")
+T_SAB = tok("ivanova", "87710225844")
 
 # ─────────────────────────────────────────────────────────────
 section("5. GET /chats — список, поиск, фильтры, пагинация")
@@ -213,7 +213,7 @@ check("reply в чужой перехваченный диалог -> 409", r.st
 r = httpx.post(f"{API}/chats/{chat1}/takeover", headers=auth(T_SAB),
                json={"force": True}, timeout=25)
 check("force=true перехватывает", r.status_code == 200 and
-      r.json()["chat"]["taken_over_by"]["name"].startswith("Сабиева"),
+      r.json()["chat"]["taken_over_by"]["name"].startswith("Иванова"),
       str(r.json()["chat"]["taken_over_by"]))
 
 # Возвращаем Калбаевой

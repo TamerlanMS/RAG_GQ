@@ -56,7 +56,7 @@ for code in ("director", "kalbaeva"):
     subprocess.run([sys.executable, "scripts/seed_managers.py", "--code", code, "--password", PW],
                    capture_output=True, cwd="/app")
 T = httpx.post(API + "/login", timeout=25, json={"phone": "87710010254", "password": PW}).json()["access_token"]
-T2 = httpx.post(API + "/login", timeout=25, json={"phone": "87750866676", "password": PW}).json()["access_token"]
+T2 = httpx.post(API + "/login", timeout=25, json={"phone": "87770791494", "password": PW}).json()["access_token"]
 DIRECTOR_ID = q1("SELECT id FROM managers WHERE code='director'")
 
 

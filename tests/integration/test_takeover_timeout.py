@@ -84,7 +84,7 @@ TIMEOUT_MIN = chat_store.TAKEOVER_TIMEOUT_MINUTES
 print(f"TAKEOVER_TIMEOUT_MINUTES = {TIMEOUT_MIN} (читаем из живого процесса api)")
 
 T_KAL = httpx.post(API + "/login", timeout=25,
-                   json={"phone": "87750866676", "password": "NewPass_kalbaeva_456"}
+                   json={"phone": "87770791494", "password": "NewPass_kalbaeva_456"}
                    ).json()["access_token"]
 HK = auth(T_KAL)
 

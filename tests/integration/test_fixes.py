@@ -33,17 +33,17 @@ def qall(sql, **p):
 
 
 T_SAB = httpx.post(API + "/login", timeout=25,
-                   json={"phone": "87711668284", "password": "TestPass_sabieva_123"}
+                   json={"phone": "87710225844", "password": "TestPass_ivanova_123"}
                    ).json()["access_token"]
 T_KAL = httpx.post(API + "/login", timeout=25,
-                   json={"phone": "87750866676", "password": "NewPass_kalbaeva_456"}
+                   json={"phone": "87770791494", "password": "NewPass_kalbaeva_456"}
                    ).json()["access_token"]
 HS = {"Authorization": f"Bearer {T_SAB}"}
 HK = {"Authorization": f"Bearer {T_KAL}"}
 
 section("ИСПРАВЛЕНИЕ 1: сервер отдаёт корректный текст ошибки логина")
 
-r = httpx.post(API + "/login", json={"phone": "87711668284", "password": "nope"}, timeout=25)
+r = httpx.post(API + "/login", json={"phone": "87710225844", "password": "nope"}, timeout=25)
 check("неверный пароль -> 401", r.status_code == 401, f"HTTP {r.status_code}")
 check("detail = «Неверный телефон или пароль», а не про сессию",
       r.json()["detail"] == "Неверный телефон или пароль", r.json()["detail"])
@@ -56,7 +56,7 @@ check("а вот на защищённом роуте 401 остаётся пр�
 section("ИСПРАВЛЕНИЕ 2: фильтр mine — по конкретному менеджеру")
 
 # Набор не должен зависеть от порядка запуска: сами создаём расклад —
-# один диалог у Сабиевой, один у Калбаевой, остальные у бота.
+# один диалог у Ивановой, один у Калбаевой, остальные у бота.
 _ids = [r[0] for r in qall("SELECT id FROM chats ORDER BY id")]
 assert len(_ids) >= 2, "нужно минимум 2 чата"
 for _i in _ids:
@@ -74,15 +74,15 @@ b = httpx.get(API + "/chats", params={"mine": "true"}, headers=HK, timeout=25).j
 allt = httpx.get(API + "/chats", params={"taken_over": "true"}, headers=HS, timeout=25).json()
 bot = httpx.get(API + "/chats", params={"taken_over": "false"}, headers=HS, timeout=25).json()
 
-check("mine для Сабиевой -> только её диалоги",
-      all((c["taken_over_by"] or {}).get("name", "").startswith("Сабиева") for c in a["items"])
+check("mine для Ивановой -> только её диалоги",
+      all((c["taken_over_by"] or {}).get("name", "").startswith("Иванова") for c in a["items"])
       and a["total"] > 0, f"{a['total']} шт.")
 check("mine для Калбаевой -> только её диалоги",
       all((c["taken_over_by"] or {}).get("name", "").startswith("Калбаева") for c in b["items"])
       and b["total"] > 0, f"{b['total']} шт.")
 check("выборки двух менеджеров не пересекаются",
       not ({c["id"] for c in a["items"]} & {c["id"] for c in b["items"]}))
-check("mine(Сабиева) + mine(Калбаева) == taken_over=true",
+check("mine(Иванова) + mine(Калбаева) == taken_over=true",
       a["total"] + b["total"] == allt["total"] == taken_total,
       f"{a['total']}+{b['total']} vs {allt['total']} (в БД {taken_total})")
 check("taken_over=false -> ни у одного нет держателя",

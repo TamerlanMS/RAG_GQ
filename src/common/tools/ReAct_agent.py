@@ -274,7 +274,7 @@ def create_order(
     """
     Сформировать текст заказа и отправить менеджеру в Telegram личным сообщением.
     Требуются: Название ТОО, ФИО, Телефон, Адрес доставки, Дата доставки, Список позиций.
-    manager_id — ID выбранного менеджера (director/kalbaeva/sabieva/zhenibek/dolakov).
+    manager_id — ID выбранного менеджера (director/kalbaeva/zhenibek/ivanova/mukhanov).
     """
     lines: List[str] = []
     counter = 1

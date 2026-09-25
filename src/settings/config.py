@@ -49,25 +49,25 @@ MANAGERS = [
         "id": "kalbaeva",
         "name": "Калбаева Диана Серикболовна",
         "role": "Менеджер по продажам",
-        "phone": "+77750866676",
-    },
-    {
-        "id": "sabieva",
-        "name": "Сабиева Гульнара Джаксыкельдиновна",
-        "role": "Менеджер по продажам",
-        "phone": "+77711668284",
+        "phone": "+77770791494",
     },
     {
         "id": "zhenibek",
         "name": "Жиенбек Заманбек Манасбайұлы",
         "role": "Менеджер по продажам",
-        "phone": "+77007718216",
+        "phone": "+77770791492",
     },
     {
-        "id": "dolakov",
-        "name": "Долаков Дауд Ибрагимович",
+        "id": "ivanova",
+        "name": "Иванова Куралай",
         "role": "Менеджер по продажам",
-        "phone": "+77086110592",
+        "phone": "+77710225844",
+    },
+    {
+        "id": "mukhanov",
+        "name": "Муханов Сабит",
+        "role": "Менеджер по продажам",
+        "phone": "+77715259591",
     },
 ]
 
@@ -76,9 +76,9 @@ MANAGERS = [
 MANAGER_CHAT_IDS: dict = {
     "director": os.getenv("TG_CHAT_ID_DIRECTOR", ""),
     "kalbaeva": os.getenv("TG_CHAT_ID_KALBAEVA", ""),
-    "sabieva":  os.getenv("TG_CHAT_ID_SABIEVA", ""),
     "zhenibek": os.getenv("TG_CHAT_ID_ZHENIBEK", ""),
-    "dolakov":  os.getenv("TG_CHAT_ID_DOLAKOV", ""),
+    "ivanova":  os.getenv("TG_CHAT_ID_IVANOVA", ""),
+    "mukhanov": os.getenv("TG_CHAT_ID_MUKHANOV", ""),
 }
 
 # Тестовый режим: все уведомления идут на один чат (например @LoginZ_B).

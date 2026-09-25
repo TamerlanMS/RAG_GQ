@@ -162,7 +162,7 @@ section("3. АУТЕНТИФИКАЦИЯ")
 
 # Пароли задаём принудительно, чтобы тест не зависел от прошлых прогонов.
 import subprocess  # noqa: E402
-for code in ("director", "kalbaeva", "sabieva", "zhenibek", "dolakov"):
+for code in ("director", "kalbaeva", "zhenibek", "ivanova", "mukhanov"):
     pw = "TestPass_" + code + "_123"
     PASSWORDS[code] = pw
     subprocess.run(
@@ -170,15 +170,15 @@ for code in ("director", "kalbaeva", "sabieva", "zhenibek", "dolakov"):
         capture_output=True, cwd="/app",
     )
 
-r = login("87711668284", PASSWORDS["sabieva"])
-check("вход под sabieva (бывший +8 номер)", r.status_code == 200, f"HTTP {r.status_code}")
+r = login("87710225844", PASSWORDS["ivanova"])
+check("вход под ivanova", r.status_code == 200, f"HTTP {r.status_code}")
 tok_sab = r.json().get("access_token") if r.status_code == 200 else None
 
-for fmt in ["+77750866676", "87750866676", "+7 775 086-66-76", "7750866676"]:
+for fmt in ["+77770791494", "87770791494", "+7 777 079-14-94", "7770791494"]:
     rr = login(fmt, PASSWORDS["kalbaeva"])
     check(f"вход в формате {fmt!r}", rr.status_code == 200, f"HTTP {rr.status_code}")
 
-tok = login("87750866676", PASSWORDS["kalbaeva"]).json()["access_token"]
+tok = login("87770791494", PASSWORDS["kalbaeva"]).json()["access_token"]
 me = httpx.get(API + "/me", headers=auth(tok), timeout=20)
 check("/me отдаёт профиль", me.status_code == 200 and me.json()["code"] == "kalbaeva",
       me.text[:80])
@@ -201,7 +201,7 @@ check("истёкший токен -> 401 с понятным текстом",
       re_exp.status_code == 401 and "истек" in re_exp.json().get("detail", "").lower(),
       re_exp.json().get("detail", ""))
 
-r_bad = login("87750866676", "wrong-password")
+r_bad = login("87770791494", "wrong-password")
 check("неверный пароль -> 401", r_bad.status_code == 401)
 r_unk = login("87019999999", "whatever")
 check("неизвестный номер -> 401", r_unk.status_code == 401)
@@ -216,9 +216,9 @@ new_pw = "NewPass_kalbaeva_456"
 rc = httpx.post(API + "/me/password", headers=auth(tok), timeout=20,
                 json={"old_password": PASSWORDS["kalbaeva"], "new_password": new_pw})
 check("смена пароля -> 204", rc.status_code == 204, f"HTTP {rc.status_code}")
-check("вход по новому паролю работает", login("87750866676", new_pw).status_code == 200)
+check("вход по новому паролю работает", login("87770791494", new_pw).status_code == 200)
 check("вход по старому паролю больше не работает",
-      login("87750866676", PASSWORDS["kalbaeva"]).status_code == 401)
+      login("87770791494", PASSWORDS["kalbaeva"]).status_code == 401)
 PASSWORDS["kalbaeva"] = new_pw
 rc2 = httpx.post(API + "/me/password", headers=auth(tok), timeout=20,
                  json={"old_password": "не тот", "new_password": "Whatever_789"})

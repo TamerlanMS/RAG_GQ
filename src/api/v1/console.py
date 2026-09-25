@@ -609,7 +609,11 @@ def get_stats(
             counted,
             (counted.id == ChatMessage.chat_id) & (counted.created_at >= start) & (counted.created_at <= end),
         )
-        .group_by(Manager.id, Manager.name)
+        .group_by(Manager.id, Manager.name, Manager.is_active)
+        # Отключённый (уволенный) менеджер — только если в этом периоде он
+        # что-то обработал: его прошлая работа из отчёта не пропадает, но и
+        # висеть нулём в списке текущих сотрудников он не должен.
+        .having(or_(Manager.is_active.is_(True), func.count(func.distinct(counted.id)) > 0))
         .order_by(func.count(func.distinct(counted.id)).desc(), Manager.name)
     ).all()
 

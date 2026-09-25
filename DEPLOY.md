@@ -240,7 +240,7 @@ docker compose up -d --build
 - Пароли, которые выведет `seed_managers.py`, — временные. В интерфейсе
   консоли смены пароля нет; задать свой пароль менеджеру можно на сервере:
   `docker compose exec api python scripts/seed_managers.py --code <code> --password '<пароль>'`
-  (коды — `director`, `kalbaeva`, `sabieva`, `zhenibek`, `dolakov` из
+  (коды — `director`, `kalbaeva`, `zhenibek`, `ivanova`, `mukhanov` из
   `src/settings/config.py`). Повторный запуск без `--password` пароли
   существующих менеджеров не меняет.
 - `SERVICE_API_TOKEN` можно оставить пустым, если массовый импорт прайса
