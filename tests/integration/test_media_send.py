@@ -227,16 +227,35 @@ for label, ext, codec, mime, ch in [
         dur = float((info.get("format") or {}).get("duration") or 0)
         check(f"{label}: длительность сохранена (~2 с)", 1.5 < dur < 2.6, str(dur))
         kbps = len(f.content) * 8 / 1000 / dur if dur else 0
-        # Opus из Chrome не пережимается (было 32 кбит/с «voip» — неразборчиво);
-        # AAC из Safari перекодируется в 64 кбит/с.
-        want = 70
-        check(f"{label}: качество не урезано (≥{want} кбит/с)", kbps >= want, f"{kbps:.0f} кбит/с")
+        check(f"{label}: битрейт профиля opus48 (~48 кбит/с)", 30 <= kbps <= 70, f"{kbps:.0f} кбит/с")
+        # Именно это ломало iPhone («This audio is no longer available»):
+        # переложенный без перекодирования поток давал preskip=0 и кадры по 2,5 мс.
+        head = f.content[f.content.find(b"OpusHead"):][:19]
+        preskip = int.from_bytes(head[10:12], "little") if len(head) >= 12 else -1
+        check(f"{label}: OpusHead preskip=312 (перекодировано, не переложено)", preskip == 312, str(preskip))
+        with tempfile.NamedTemporaryFile(suffix=".ogg") as tf:
+            tf.write(f.content)
+            tf.flush()
+            frames = {x.strip(",") for x in subprocess.run(
+                ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries",
+                 "packet=duration_time", "-of", "csv=p=0", tf.name],
+                capture_output=True, text=True).stdout.split()[:-1]}
+        check(f"{label}: кадры по 20 мс", frames == {"0.020000"}, str(sorted(frames)[:5]))
     vrel = q1("SELECT extra->>'media_path' FROM chat_messages WHERE id=:i", i=m.get("id") or 0)
     if vrel:
         g = httpx.get(BASE + media_store.signed_path_url(vrel), timeout=25)
         # Именно этот заголовок проверяет WhatsApp (ошибка 131053 при octet-stream).
         check(f"{label}: Gupshup получает Content-Type audio/ogg; codecs=opus",
               g.headers.get("content-type") == "audio/ogg; codecs=opus", g.headers.get("content-type"))
+for prof, (ext, pmime, _) in media_store.VOICE_PROFILES.items():
+    out = media_store.encode_voice(make_audio("webm", "libopus", channels=2), prof)
+    info = probe(out) if out else {}
+    st = (info.get("streams") or [{}])[0]
+    check(f"профиль {prof}: кодируется, моно", bool(out) and st.get("channels") == 1, str(st))
+    if prof == "opus16" and out:
+        h = out[out.find(b"OpusHead"):]
+        check("профиль opus16: input_rate 16000 как у WhatsApp",
+              int.from_bytes(h[12:16], "little") == 16000, str(int.from_bytes(h[12:16], "little")))
 last = q1("SELECT text FROM chat_messages WHERE chat_id=:c AND author='manager' ORDER BY id DESC LIMIT 1", c=cid3)
 check("подпись не ушла отдельным сообщением", not last, str(last))
 r = httpx.post(f"{API}/chats/{cid3}/reply-file", headers=auth(T), timeout=60,

@@ -269,23 +269,6 @@ def delete(rel: str) -> None:
 VOICE_MAX_SECONDS = 15 * 60
 
 
-def _probe_audio(path: Path) -> tuple:
-    """(кодек, число каналов) первой аудиодорожки или (None, 0)."""
-    import subprocess
-
-    try:
-        proc = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "a:0",
-             "-show_entries", "stream=codec_name,channels", "-of", "csv=p=0", str(path)],
-            capture_output=True, timeout=30,
-        )
-        parts = proc.stdout.decode(errors="replace").strip().lower().split(",")
-        return (parts[0] or None), (int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0)
-    except Exception as e:
-        logger.warning("media_store: ffprobe не запустился: %s", e)
-        return None, 0
-
-
 def _run_ffmpeg(args: list) -> bool:
     import subprocess
 
@@ -301,38 +284,59 @@ def _run_ffmpeg(args: list) -> bool:
     return proc.returncode == 0
 
 
+# Варианты кодирования голосового. Сравниваются на iPhone скриптом
+# scripts/voice_variants.py: WhatsApp на iPhone строже разбирает аудио, чем
+# на компьютере, и на «неправильном» файле показывает
+# «This audio is no longer available», хотя на компьютере тот же файл играет.
+# (ext, mime, аргументы ffmpeg после -i)
+_VOICE_COMMON = ["-vn", "-map", "0:a:0", "-ac", "1", "-map_metadata", "-1",
+                 "-avoid_negative_ts", "make_zero"]
+VOICE_PROFILES = {
+    # Как у самих голосовых WhatsApp: Opus 16 кГц, ~24 кбит/с, кадры 20 мс.
+    "opus16": (".ogg", "audio/ogg", [*_VOICE_COMMON, "-ar", "16000", "-c:a", "libopus",
+                                     "-b:a", "24k", "-application", "voip", "-frame_duration", "20"]),
+    # Opus 48 кГц, 48 кбит/с — разборчивее, чем 32 кбит/с.
+    "opus48": (".ogg", "audio/ogg", [*_VOICE_COMMON, "-ar", "48000", "-c:a", "libopus",
+                                     "-b:a", "48k", "-application", "voip", "-frame_duration", "20"]),
+    # Запасные: у клиента это будет аудиофайл, а не голосовое с волной.
+    "mp3": (".mp3", "audio/mpeg", [*_VOICE_COMMON, "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "64k"]),
+    "aac": (".m4a", "audio/mp4", [*_VOICE_COMMON, "-ar", "44100", "-c:a", "aac", "-b:a", "64k",
+                                  "-movflags", "+faststart"]),
+}
+VOICE_PROFILE_DEFAULT = os.getenv("VOICE_PROFILE", "opus48")
+
+
+def encode_voice(data: bytes, profile: str) -> Optional[bytes]:
+    """Перекодирует запись по профилю из VOICE_PROFILES. None — не удалось."""
+    import tempfile
+
+    ext, _mime, args = VOICE_PROFILES[profile]
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "in"
+        dst = Path(tmp) / ("out" + ext)
+        src.write_bytes(data)
+        if not _run_ffmpeg(["-i", str(src), *args, "-t", str(VOICE_MAX_SECONDS), str(dst)]):
+            return None
+        if not dst.is_file() or dst.stat().st_size == 0:
+            return None
+        return dst.read_bytes()
+
+
 def to_whatsapp_voice(data: bytes) -> Optional[bytes]:
     """
     Готовит запись из браузера как голосовое WhatsApp: OGG-контейнер с Opus —
     единственный формат, который WhatsApp показывает голосовым (с волной),
     а не аудиофайлом. None — запись битая или это не аудио.
 
-    Качество: раньше всё пережималось в 32 кбит/с «voip», и речь становилась
-    неразборчивой. Теперь моно-Opus (Firefox, часть Android) не перекодируется
-    вовсе — только перекладывается из WebM в OGG (-c:a copy, без потерь).
-    Остальное — стерео-Opus от Chrome (он пишет стерео даже с моно-микрофона,
-    а голосовые WhatsApp моно), MP4/AAC из Safari — сводится в моно Opus
-    96 кбит/с в режиме полного качества: на речи это на слух без потерь.
+    Всегда перекодирует, никогда не перекладывает поток браузера как есть
+    (-c:a copy): такой OGG получался с preskip=0 и рваной нарезкой кадров
+    (по 2,5 мс) — на компьютере играл, а на iPhone давал
+    «This audio is no longer available».
 
     Через временные файлы, а не pipe: у MP4 из Safari индекс (moov) бывает
     в конце файла, и из несикаемого потока ffmpeg его не прочитает.
     """
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmp:
-        src = Path(tmp) / "in"
-        dst = Path(tmp) / "out.ogg"
-        src.write_bytes(data)
-
-        ok = False
-        codec, channels = _probe_audio(src)
-        if codec == "opus" and channels == 1:
-            ok = _run_ffmpeg(["-i", str(src), "-vn", "-map", "0:a:0", "-c:a", "copy",
-                              "-t", str(VOICE_MAX_SECONDS), str(dst)])
-        if not ok or not dst.is_file() or dst.stat().st_size == 0:
-            ok = _run_ffmpeg(["-i", str(src), "-vn", "-ac", "1", "-ar", "48000",
-                              "-c:a", "libopus", "-b:a", "96k", "-application", "audio",
-                              "-t", str(VOICE_MAX_SECONDS), str(dst)])
-        if not ok or not dst.is_file() or dst.stat().st_size == 0:
-            return None
-        return dst.read_bytes()
+    profile = VOICE_PROFILE_DEFAULT
+    if profile not in VOICE_PROFILES or VOICE_PROFILES[profile][0] != ".ogg":
+        profile = "opus48"
+    return encode_voice(data, profile)

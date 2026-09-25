@@ -145,9 +145,13 @@ are served inline; everything else is forced to `attachment` + `application/octe
 Outgoing files (`POST /console/chats/{id}/reply-file`) go the other way: Gupshup only accepts a URL, so
 the upload is saved to `MEDIA_DIR` and Gupshup gets a 1-hour path-signed `/console/media-out` link on
 `PUBLIC_BASE_URL` or `https://$DOMAIN` — signed by path, not message id, because the message row is
-written only after Gupshup accepts. Voice notes recorded in the console (`voice=true`) are re-encoded by
+written only after Gupshup accepts. Voice notes recorded in the console (`voice=true`) are **always re-encoded** by
 **ffmpeg** (installed in the Dockerfile) to mono OGG/Opus — the only format WhatsApp shows as a voice note;
-browsers record WebM (Chrome/Firefox) or MP4 (Safari). Recording needs a secure context (https or
+browsers record WebM (Chrome/Firefox) or MP4 (Safari). Never remux the browser stream with `-c:a copy`:
+that produced OGG with `preskip=0` and 2.5 ms packets which play on desktop but show "This audio is no
+longer available" on the recipient's iPhone. Encoding settings are profiles in
+`media_store.VOICE_PROFILES`, chosen by `VOICE_PROFILE`; `scripts/voice_variants.py <phone>` sends the
+same recording in every profile so the one that plays on iPhone can be picked. Recording needs a secure context (https or
 localhost), and nginx must allow large bodies (`client_max_body_size`).
 
 Real-time is short polling with an `after_id` cursor (chats 5s, thread 3s), not SSE/WebSocket: it
