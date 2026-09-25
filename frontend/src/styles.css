@@ -257,122 +257,51 @@ svg {
 /* ── Вход ───────────────────────────────────────────── */
 
 .login-page {
-  position: relative;
   min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
   background: var(--app-bg);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 0 16px 40px;
-}
-
-.login-band {
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 128px;
-  background: var(--accent);
-}
-
-.login-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 18px 16px;
-  color: #fff;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
 }
 
 .login-card {
-  position: relative;
   width: 100%;
-  max-width: 960px;
-  margin-top: 70px;
-  display: grid;
-  grid-template-columns: 1.15fr 1fr;
-  background: var(--panel);
-  border-radius: 6px;
-  box-shadow: 0 17px 50px rgba(11, 20, 26, 0.19), 0 12px 15px rgba(11, 20, 26, 0.24);
-  overflow: hidden;
-}
-
-.login-intro {
-  padding: 52px 48px 40px 56px;
-  display: flex;
-  flex-direction: column;
-}
-
-.login-title {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 300;
-  color: #41525d;
-}
-
-.login-subtitle {
-  margin: 10px 0 26px;
-  color: var(--text-muted);
-  font-size: 15px;
-  line-height: 1.5;
-}
-
-.login-features {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+  max-width: 380px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  color: #3b4a54;
-  font-size: 15px;
-  line-height: 1.4;
+  padding: 36px 32px 32px;
+  background: var(--panel);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(11, 20, 26, 0.12), 0 2px 6px rgba(11, 20, 26, 0.08);
 }
 
-.login-features li {
+.login-logo {
   display: flex;
   align-items: center;
-  gap: 14px;
-}
-
-.login-feature-icon {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 2px;
   border-radius: 50%;
   background: var(--accent-soft);
   color: var(--accent-dark);
 }
 
-.login-help {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: auto 0 0;
-  padding-top: 32px;
-  font-size: 13.5px;
-  color: var(--text-muted);
-}
-
-.login-form {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 52px 48px 36px;
-  border-left: 1px solid var(--divider);
-  background: #fcfcfc;
-}
-
-.login-form-title {
-  margin: 0 0 2px;
-  font-size: 20px;
+.login-title {
+  margin: 0;
+  font-size: 22px;
   font-weight: 600;
+  text-align: center;
   color: var(--text);
+}
+
+.login-subtitle {
+  margin: -12px 0 6px;
+  font-size: 14px;
+  text-align: center;
+  color: var(--text-muted);
 }
 
 .login-alert {
@@ -510,14 +439,6 @@ svg {
   font-size: 15px;
 }
 
-.login-secure {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--text-muted);
-}
 
 /* ── Каркас ─────────────────────────────────────────── */
 
@@ -1553,47 +1474,8 @@ svg {
     font-size: 28px;
   }
 
-  .login-band {
-    height: calc(96px + env(safe-area-inset-top));
-  }
-
-  .login-brand {
-    padding: calc(14px + env(safe-area-inset-top)) 16px 14px;
-    font-size: 14px;
-  }
-
-  /* На телефоне — только форма; описание консоли сокращаем до заголовка. */
   .login-card {
-    grid-template-columns: 1fr;
-    margin-top: calc(56px + env(safe-area-inset-top));
-  }
-
-  .login-intro {
-    padding: 24px 22px 0;
-  }
-
-  .login-title {
-    font-size: 22px;
-  }
-
-  .login-subtitle {
-    margin: 6px 0 0;
-    font-size: 14px;
-  }
-
-  .login-features,
-  .login-form-title {
-    display: none;
-  }
-
-  .login-help {
-    padding-top: 10px;
-  }
-
-  .login-form {
-    padding: 20px 22px 26px;
-    border-left: none;
-    background: var(--panel);
+    padding: 28px 22px 24px;
   }
 
   .input-wrap input {

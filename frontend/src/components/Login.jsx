@@ -1,19 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api.js";
 import { getLastPhone, setAuth, setLastPhone } from "../auth.js";
-import {
-  IconAlert,
-  IconBot,
-  IconConsole,
-  IconEye,
-  IconEyeOff,
-  IconImage,
-  IconInfo,
-  IconKey,
-  IconPhone,
-  IconShield,
-  IconTakeover,
-} from "./icons.jsx";
+import { IconAlert, IconConsole, IconEye, IconEyeOff, IconInfo, IconKey, IconPhone } from "./icons.jsx";
 
 // Номер храним как 10 цифр после +7. «+7» стоит неизменяемой приставкой перед
 // полем, в поле — «(777) 000-00-00». Ввод и вставка в любом виде:
@@ -36,12 +24,6 @@ function formatNational(n) {
   if (n.length > 8) out += `-${n.slice(8, 10)}`;
   return out;
 }
-
-const FEATURES = [
-  [IconBot, "Переписка клиентов с ботом WhatsApp — в реальном времени"],
-  [IconTakeover, "Перехват диалога: бот замолкает, отвечаете вы"],
-  [IconImage, "Фото, файлы и голосовые — в обе стороны"],
-];
 
 export function Login({ onSuccess, notice = "" }) {
   const [national, setNational] = useState(getLastPhone);
@@ -86,114 +68,86 @@ export function Login({ onSuccess, notice = "" }) {
 
   return (
     <div className="login-page">
-      <div className="login-band">
-        <div className="login-brand">
-          <IconConsole size={28} strokeWidth={1.5} />
-          <span>GQ Group</span>
+      <form className="login-card" onSubmit={submit} noValidate>
+        <div className="login-logo">
+          <IconConsole size={30} strokeWidth={1.5} />
         </div>
-      </div>
+        <h1 className="login-title">Вход в консоль</h1>
+        <p className="login-subtitle">GQ Group</p>
 
-      <div className="login-card">
-        <section className="login-intro">
-          <h1 className="login-title">Консоль менеджера</h1>
-          <p className="login-subtitle">Рабочее место для переписки с клиентами GQ Group в WhatsApp.</p>
-          <ul className="login-features">
-            {FEATURES.map(([Icon, text]) => (
-              <li key={text}>
-                <span className="login-feature-icon">
-                  <Icon size={18} />
-                </span>
-                {text}
-              </li>
-            ))}
-          </ul>
-          <p className="login-help">
-            <IconInfo size={16} />
-            Нет доступа или забыли пароль — обратитесь к руководителю.
-          </p>
-        </section>
+        {notice && !error && (
+          <div className="login-alert is-info" role="status">
+            <IconInfo size={18} />
+            <span>{notice}</span>
+          </div>
+        )}
+        {error && (
+          <div className="login-alert is-error" role="alert">
+            <IconAlert size={18} />
+            <span>{error}</span>
+          </div>
+        )}
 
-        <form className="login-form" onSubmit={submit} noValidate>
-          <h2 className="login-form-title">Вход</h2>
+        <label className="field">
+          <span className="field-label">Телефон</span>
+          <span className="input-wrap">
+            <IconPhone size={18} className="input-icon" />
+            <span className="input-prefix">+7</span>
+            <input
+              ref={phoneRef}
+              className="has-prefix"
+              type="tel"
+              inputMode="tel"
+              value={formatNational(national)}
+              onChange={(e) => {
+                setNational(toNational(e.target.value));
+                setError("");
+              }}
+              placeholder="(777) 000-00-00"
+              autoComplete="username"
+              aria-invalid={Boolean(error) || undefined}
+              required
+            />
+          </span>
+        </label>
 
-          {notice && !error && (
-            <div className="login-alert is-info" role="status">
-              <IconInfo size={18} />
-              <span>{notice}</span>
-            </div>
-          )}
-          {error && (
-            <div className="login-alert is-error" role="alert">
-              <IconAlert size={18} />
-              <span>{error}</span>
-            </div>
-          )}
+        <label className="field">
+          <span className="field-label">Пароль</span>
+          <span className="input-wrap">
+            <IconKey size={18} className="input-icon" />
+            <input
+              ref={passwordRef}
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setError("");
+              }}
+              onKeyDown={onPasswordKey}
+              onKeyUp={onPasswordKey}
+              onBlur={() => setCapsLock(false)}
+              autoComplete="current-password"
+              aria-invalid={Boolean(error) || undefined}
+              required
+            />
+            <button
+              type="button"
+              className="input-toggle"
+              onClick={() => setShowPassword((v) => !v)}
+              title={showPassword ? "Скрыть пароль" : "Показать пароль"}
+              aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
+            >
+              {showPassword ? <IconEyeOff size={18} /> : <IconEye size={18} />}
+            </button>
+          </span>
+          {capsLock && <span className="field-hint is-warning">Включён Caps Lock</span>}
+        </label>
 
-          <label className="field">
-            <span className="field-label">Телефон</span>
-            <span className="input-wrap">
-              <IconPhone size={18} className="input-icon" />
-              <span className="input-prefix">+7</span>
-              <input
-                ref={phoneRef}
-                className="has-prefix"
-                type="tel"
-                inputMode="tel"
-                value={formatNational(national)}
-                onChange={(e) => {
-                  setNational(toNational(e.target.value));
-                  setError("");
-                }}
-                placeholder="(777) 000-00-00"
-                autoComplete="username"
-                aria-invalid={Boolean(error) || undefined}
-                required
-              />
-            </span>
-          </label>
+        <button className="btn-primary login-submit" type="submit" disabled={busy || !phoneComplete || !password}>
+          {busy ? <span className="spinner" /> : "Войти"}
+        </button>
 
-          <label className="field">
-            <span className="field-label">Пароль</span>
-            <span className="input-wrap">
-              <IconKey size={18} className="input-icon" />
-              <input
-                ref={passwordRef}
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  setError("");
-                }}
-                onKeyDown={onPasswordKey}
-                onKeyUp={onPasswordKey}
-                onBlur={() => setCapsLock(false)}
-                autoComplete="current-password"
-                aria-invalid={Boolean(error) || undefined}
-                required
-              />
-              <button
-                type="button"
-                className="input-toggle"
-                onClick={() => setShowPassword((v) => !v)}
-                title={showPassword ? "Скрыть пароль" : "Показать пароль"}
-                aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
-              >
-                {showPassword ? <IconEyeOff size={18} /> : <IconEye size={18} />}
-              </button>
-            </span>
-            {capsLock && <span className="field-hint is-warning">Включён Caps Lock</span>}
-          </label>
-
-          <button className="btn-primary login-submit" type="submit" disabled={busy || !phoneComplete || !password}>
-            {busy ? <span className="spinner" /> : "Войти"}
-          </button>
-
-          <p className="login-secure">
-            <IconShield size={15} />
-            Пароль не сохраняется на этом устройстве — только номер телефона.
-          </p>
-        </form>
-      </div>
+      </form>
     </div>
   );
 }
