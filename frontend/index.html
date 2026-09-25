@@ -2,7 +2,18 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover — отступы под «чёлку»/полоску жестов iPhone задаются
+         в CSS через env(safe-area-inset-*); interactive-widget — на Android
+         клавиатура сжимает страницу, и поле ввода не уходит под неё. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <meta name="theme-color" content="#128c7e" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="GQ консоль" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>GQ Group — консоль менеджера</title>
   </head>
   <body>

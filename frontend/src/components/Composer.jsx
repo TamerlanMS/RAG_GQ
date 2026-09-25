@@ -10,6 +10,10 @@ function formatSize(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
 }
 
+// Сенсорный экран: у экранной клавиатуры нет Shift, поэтому Enter переносит
+// строку, а отправка — кнопкой (как в самом WhatsApp).
+const IS_TOUCH = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
+
 function formatTimer(sec) {
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
 }
@@ -56,8 +60,8 @@ export function Composer({ onSend, onSendFile, onSendVoice, disabled }) {
   }
 
   function onKeyDown(e) {
-    // Enter отправляет, Shift+Enter переносит строку.
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Enter отправляет, Shift+Enter переносит строку (на телефоне Enter — перенос).
+    if (e.key === "Enter" && !e.shiftKey && !IS_TOUCH) {
       e.preventDefault();
       send();
     }
@@ -82,13 +86,14 @@ export function Composer({ onSend, onSendFile, onSendVoice, disabled }) {
       <div className="composer-wrap">
         <div className="composer composer-recording">
           <button type="button" className="btn-ghost" onClick={voice.cancel} title="Удалить запись">
-            ✕ Отменить
+            ✕<span className="label-full"> Отменить</span>
           </button>
           <span className="rec-indicator">
             <span className="rec-dot" /> Запись {formatTimer(voice.seconds)}
           </span>
-          <button type="button" className="btn-primary btn-send" onClick={sendVoice}>
-            Отправить голосовое
+          <button type="button" className="btn-primary btn-send" onClick={sendVoice} title="Отправить голосовое">
+            <span className="label-full">Отправить голосовое</span>
+            <span className="label-short">➤</span>
           </button>
         </div>
       </div>
@@ -153,14 +158,21 @@ export function Composer({ onSend, onSendFile, onSendVoice, disabled }) {
           placeholder={
             file
               ? "Подпись к файлу (необязательно)…"
-              : "Напишите сообщение…  (Enter — отправить, Shift+Enter — новая строка)"
+              : IS_TOUCH
+                ? "Сообщение"
+                : "Напишите сообщение…  (Enter — отправить, Shift+Enter — новая строка)"
           }
           rows={1}
           maxLength={file ? 1024 : 4000}
           disabled={disabled || busy}
         />
-        <button type="button" className="btn-primary btn-send" onClick={send} disabled={!canSend}>
-          {busy ? "…" : "Отправить"}
+        <button type="button" className="btn-primary btn-send" onClick={send} disabled={!canSend} title="Отправить">
+          {busy ? "…" : (
+            <>
+              <span className="label-full">Отправить</span>
+              <span className="label-short">➤</span>
+            </>
+          )}
         </button>
       </div>
     </div>

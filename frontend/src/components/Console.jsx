@@ -56,6 +56,30 @@ export function Console({ manager, onLogout }) {
 
   const activeChat = chats.find((c) => c.id === activeId) || null;
 
+  // На телефоне открытый чат занимает весь экран (как в WhatsApp), поэтому
+  // «назад» — системная кнопка/жест Android или браузера — должен закрывать
+  // чат, а не уводить со страницы. Открытие чата кладёт запись в историю,
+  // переключение между чатами её заменяет (иначе «назад» листал бы чаты).
+  function openChat(id) {
+    const state = { gqChat: id };
+    if (window.history.state?.gqChat) window.history.replaceState(state, "");
+    else window.history.pushState(state, "");
+    setActiveId(id);
+  }
+
+  function closeChat() {
+    if (window.history.state?.gqChat) window.history.back(); // popstate ниже сбросит activeId
+    else setActiveId(null);
+  }
+
+  useEffect(() => {
+    function onPop(e) {
+      setActiveId(e.state?.gqChat ?? null);
+    }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   const loadChats = useCallback(async () => {
     // "mine" — перехваченные именно этим менеджером (фильтрует сервер по id),
     // "bot" — те, что ведёт бот. Смешивать их в один булев флаг нельзя.
@@ -252,20 +276,25 @@ export function Console({ manager, onLogout }) {
   }
 
   return (
-    <div className="console">
+    <div className={`console${activeChat && view !== "stats" ? " is-chat-open" : ""}`}>
       <header className="topbar">
-        <div className="topbar-brand">GQ Group · консоль менеджера</div>
+        <div className="topbar-brand">
+          <span className="label-full">GQ Group · консоль менеджера</span>
+          <span className="label-short">GQ Group</span>
+        </div>
         <div className="topbar-user">
           {isDirector && (
             <button
               type="button"
               className="btn-ghost"
               onClick={() => setView(view === "stats" ? "chats" : "stats")}
+              title={view === "stats" ? "Диалоги" : "Статистика"}
             >
-              {view === "stats" ? "Диалоги" : "Статистика"}
+              <span className="label-full">{view === "stats" ? "Диалоги" : "Статистика"}</span>
+              <span className="label-short">{view === "stats" ? "💬" : "📊"}</span>
             </button>
           )}
-          <span className="avatar avatar-sm">{initials(manager.name)}</span>
+          <span className="avatar avatar-sm" title={manager.name}>{initials(manager.name)}</span>
           <span className="topbar-name">{manager.name}</span>
           <button type="button" className="btn-ghost" onClick={logout}>
             Выйти
@@ -280,7 +309,7 @@ export function Console({ manager, onLogout }) {
         <ChatList
           chats={chats}
           activeId={activeId}
-          onSelect={setActiveId}
+          onSelect={openChat}
           query={query}
           onQueryChange={setQuery}
           filter={filter}
@@ -294,12 +323,17 @@ export function Console({ manager, onLogout }) {
           ) : (
             <>
               <div className="pane-header">
-                <div>
-                  <div className="pane-title">
-                    {activeChat.display_name || activeChat.phone || activeChat.external_id}
-                  </div>
-                  <div className="pane-subtitle">
-                    {activeChat.phone || activeChat.external_id} · WhatsApp
+                <div className="pane-header-main">
+                  <button type="button" className="btn-back" onClick={closeChat} aria-label="К списку диалогов">
+                    ←
+                  </button>
+                  <div className="pane-header-titles">
+                    <div className="pane-title">
+                      {activeChat.display_name || activeChat.phone || activeChat.external_id}
+                    </div>
+                    <div className="pane-subtitle">
+                      {activeChat.phone || activeChat.external_id} · WhatsApp
+                    </div>
                   </div>
                 </div>
 

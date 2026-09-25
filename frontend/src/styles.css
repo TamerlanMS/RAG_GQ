@@ -713,15 +713,41 @@ button {
   }
 }
 
-@media (max-width: 720px) {
-  .sidebar {
-    width: 45%;
-    min-width: 210px;
-  }
-  .bubble {
-    max-width: 88%;
-  }
+/* ── Общие мелочи для сенсорных экранов ─────────────── */
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
 }
+
+/* Короткие подписи кнопок — только на телефоне. */
+.label-short {
+  display: none;
+}
+
+/* Кнопка «назад» в шапке диалога — только на телефоне. */
+.btn-back {
+  display: none;
+}
+
+.pane-header-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pane-header-titles {
+  min-width: 0;
+}
+
+.pane-title,
+.pane-subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 
 /* ── Статистика (только директор) ────────────────────── */
 
@@ -838,4 +864,201 @@ button {
 
 .stats-table tbody tr:last-child td {
   border-bottom: none;
+}
+
+/* ── Телефон: один экран за раз, как в WhatsApp ─────── */
+
+@media (max-width: 720px) {
+  /* dvh — видимая высота без панелей браузера: иначе поле ввода уезжает
+     под нижнюю панель Safari/Chrome. */
+  .console {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  .label-full {
+    display: none;
+  }
+
+  .label-short {
+    display: inline;
+  }
+
+  .topbar {
+    padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+  }
+
+  .topbar-name {
+    display: none;
+  }
+
+  .topbar-user {
+    gap: 8px;
+  }
+
+  .topbar-user .btn-ghost {
+    min-height: 36px;
+    padding: 6px 12px;
+  }
+
+  /* Список чатов на весь экран; открытый чат — на весь экран вместо него. */
+  .sidebar {
+    width: 100%;
+    min-width: 0;
+    border-right: none;
+  }
+
+  .pane {
+    display: none;
+  }
+
+  .console.is-chat-open .sidebar,
+  .console.is-chat-open .topbar {
+    display: none;
+  }
+
+  .console.is-chat-open .pane {
+    display: flex;
+  }
+
+  .chat-item {
+    padding: 12px 14px;
+  }
+
+  .chip {
+    padding: 7px 14px;
+    font-size: 13px;
+  }
+
+  .btn-back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    margin-left: -6px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    font-size: 22px;
+    color: var(--text);
+  }
+
+  .btn-back:active {
+    background: var(--panel-alt);
+  }
+
+  .pane-header {
+    padding: calc(6px + env(safe-area-inset-top)) 10px 8px;
+    gap: 6px;
+  }
+
+  .pane-header-main {
+    width: 100%;
+  }
+
+  .takeover-bar {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .takeover-bar .btn-ghost,
+  .takeover-bar .btn-secondary {
+    min-height: 36px;
+  }
+
+  .pane-error {
+    margin: 6px 10px 0;
+  }
+
+  .thread {
+    padding: 10px 8px;
+  }
+
+  .bubble {
+    max-width: 85%;
+  }
+
+  .attachment-image {
+    max-width: min(260px, 70vw);
+  }
+
+  .attachment-video {
+    max-width: min(280px, 72vw);
+  }
+
+  .attachment-audio {
+    width: min(260px, 68vw);
+  }
+
+  .composer {
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+    gap: 6px;
+  }
+
+  .composer-file {
+    padding: 8px 12px;
+  }
+
+  .btn-attach {
+    width: 42px;
+    height: 42px;
+  }
+
+  .btn-send {
+    min-width: 44px;
+    height: 42px;
+    padding: 0 14px;
+    font-size: 18px;
+  }
+
+  .composer-recording .btn-ghost {
+    min-height: 42px;
+  }
+
+  /* 16px и больше: иначе iPhone приближает страницу при фокусе на поле. */
+  .composer textarea,
+  .sidebar-search input,
+  .field input,
+  .stats-range input {
+    font-size: 16px;
+  }
+
+  .composer textarea {
+    min-height: 42px;
+    padding: 9px 14px;
+    resize: none;
+  }
+
+  .stats-page {
+    padding: 14px 12px calc(28px + env(safe-area-inset-bottom));
+  }
+
+  .stats-header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .stats-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .stats-periods {
+    flex-wrap: wrap;
+  }
+
+  .stats-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .stats-table-wrap {
+    overflow-x: auto;
+  }
+
+  .login-card {
+    padding: 26px 20px;
+  }
 }
