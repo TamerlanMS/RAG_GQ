@@ -177,7 +177,17 @@ def verify_signature(message_id: int, exp: int, sig: str) -> bool:
 # Подпись — по пути файла, а не по id сообщения: сообщение записывается
 # в БД только ПОСЛЕ успешной отправки, и id на момент отправки ещё нет.
 
-_OUT_URL_TTL_SECONDS = 3600
+# Сколько живёт ссылка для Gupshup. WhatsApp забирает файл не обязательно
+# сразу: если получатель был офлайн или открыл чат позже, сервер WhatsApp
+# может запросить ссылку снова — с часовой ссылкой клиент видел «The audio is
+# no longer available. Please ask … to re-send it». 30 дней — столько WhatsApp
+# хранит медиа. Путь к файлу — случайный uuid, так что ссылка не угадывается.
+_OUT_URL_TTL_SECONDS = 30 * 24 * 3600
+
+# Сколько ещё принимать ссылку после её exp. Нужен для уже отправленных
+# сообщений: они ушли с часовыми ссылками, файлы на диске остались, и с этим
+# запасом WhatsApp снова сможет их скачать.
+_OUT_URL_GRACE_SECONDS = 30 * 24 * 3600
 
 # Что WhatsApp принимает как фото/видео/аудио; всё остальное уходит документом.
 _OUT_IMAGE = frozenset({"image/jpeg", "image/png"})
@@ -234,9 +244,14 @@ def signed_path_url(rel: str) -> str:
 
 
 def verify_path_signature(rel: str, exp: int, sig: str) -> bool:
-    if not _SECRET or exp < int(time.time()):
+    if not _SECRET or not hmac.compare_digest(_sign_path(rel, exp), sig):
         return False
-    return hmac.compare_digest(_sign_path(rel, exp), sig)
+    now = int(time.time())
+    if exp < now:
+        # Видно в логах, что WhatsApp перезапрашивает файл позже срока.
+        logger.warning("media-out: запрос по просроченной ссылке (%s ч после срока): %s",
+                       (now - exp) // 3600, rel)
+    return exp + _OUT_URL_GRACE_SECONDS >= now
 
 
 def delete(rel: str) -> None:

@@ -162,10 +162,22 @@ evil = "../../../etc/passwd"
 check("выход за MEDIA_DIR даже с верной подписью -> 404",
       httpx.get(f"{API}/media-out", params={"p": evil, "exp": exp, "sig": media_store._sign_path(evil, exp)},
                 timeout=25).status_code == 404)
-past = int(time.time()) - 5
-check("просроченная ссылка -> 404",
-      httpx.get(f"{API}/media-out", params={"p": rel, "exp": past, "sig": media_store._sign_path(rel, past)},
+# WhatsApp может перезапросить файл позже: ссылка живёт 30 дней, и ещё
+# 30 дней принимается после срока (для уже отправленных часовых ссылок).
+issued = media_store.signed_path_url(rel)
+exp_issued = int(issued.split("exp=")[1].split("&")[0])
+check("ссылка для Gupshup живёт ~30 дней", exp_issued - time.time() > 29 * 24 * 3600,
+      f"{(exp_issued - time.time()) / 86400:.1f} дн")
+hour_ago = int(time.time()) - 3600
+check("старая часовая ссылка, истёкшая час назад -> 200 (WhatsApp перезапросил)",
+      httpx.get(f"{API}/media-out", params={"p": rel, "exp": hour_ago, "sig": media_store._sign_path(rel, hour_ago)},
+                timeout=25).status_code == 200)
+long_ago = int(time.time()) - 31 * 24 * 3600
+check("ссылка, истёкшая больше 30 дней назад -> 404",
+      httpx.get(f"{API}/media-out", params={"p": rel, "exp": long_ago, "sig": media_store._sign_path(rel, long_ago)},
                 timeout=25).status_code == 404)
+check("просроченная ссылка с чужой подписью -> 404",
+      httpx.get(f"{API}/media-out", params={"p": rel, "exp": hour_ago, "sig": "0" * 64}, timeout=25).status_code == 404)
 
 section("6b. Голосовое из консоли: перекодирование в OGG/Opus")
 import tempfile
