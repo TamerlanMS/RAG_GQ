@@ -2,13 +2,17 @@
 // Windows, Mac, Android и iPhone рисуются по-разному и выглядят грязно,
 // а у SVG-иконок одна толщина линии и цвет берётся из CSS (currentColor).
 import {
+  AlertCircle,
   ArrowLeft,
   BarChart3,
   Bot,
   Download,
+  Eye,
+  EyeOff,
   FileText,
   Image,
   Info,
+  KeyRound,
   LogOut,
   MessageSquare,
   MessagesSquare,
@@ -16,6 +20,8 @@ import {
   MousePointerClick,
   Music,
   Paperclip,
+  Phone,
+  ShieldCheck,
   Search,
   SendHorizontal,
   Sticker,
@@ -34,7 +40,15 @@ function wrap(Icon) {
   };
 }
 
+export const IconAlert = wrap(AlertCircle);
 export const IconArrowLeft = wrap(ArrowLeft);
+export const IconEye = wrap(Eye);
+export const IconEyeOff = wrap(EyeOff);
+export const IconInfo = wrap(Info);
+export const IconKey = wrap(KeyRound);
+export const IconPhone = wrap(Phone);
+export const IconShield = wrap(ShieldCheck);
+export const IconImage = wrap(Image);
 export const IconStats = wrap(BarChart3);
 export const IconBot = wrap(Bot);
 export const IconDownload = wrap(Download);

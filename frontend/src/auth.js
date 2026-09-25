@@ -42,3 +42,23 @@ export function clearAuth() {
     /* ничего не делаем */
   }
 }
+
+// Последний номер, с которым входили, — чтобы не набирать его каждый раз.
+// Только номер (10 цифр без +7); пароль не сохраняется никогда.
+const LAST_PHONE_KEY = "gq_console_last_phone";
+
+export function getLastPhone() {
+  try {
+    return localStorage.getItem(LAST_PHONE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setLastPhone(national) {
+  try {
+    localStorage.setItem(LAST_PHONE_KEY, national);
+  } catch {
+    /* приватный режим — просто не запомним */
+  }
+}

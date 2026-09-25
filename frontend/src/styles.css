@@ -257,6 +257,7 @@ svg {
 /* ── Вход ───────────────────────────────────────────── */
 
 .login-page {
+  position: relative;
   min-height: 100%;
   background: var(--app-bg);
   display: flex;
@@ -276,9 +277,9 @@ svg {
   display: flex;
   align-items: center;
   gap: 10px;
-  max-width: 1000px;
+  max-width: 960px;
   margin: 0 auto;
-  padding: 28px 16px;
+  padding: 26px 16px;
   color: #fff;
   font-size: 15px;
   font-weight: 600;
@@ -288,28 +289,122 @@ svg {
 .login-card {
   position: relative;
   width: 100%;
-  max-width: 420px;
-  margin-top: 110px;
+  max-width: 960px;
+  margin-top: 100px;
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
   background: var(--panel);
   border-radius: 6px;
-  padding: 40px 36px 36px;
   box-shadow: 0 17px 50px rgba(11, 20, 26, 0.19), 0 12px 15px rgba(11, 20, 26, 0.24);
+  overflow: hidden;
+}
+
+.login-intro {
+  padding: 52px 48px 40px 56px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
 }
 
 .login-title {
   margin: 0;
-  font-size: 26px;
+  font-size: 28px;
   font-weight: 300;
   color: #41525d;
 }
 
 .login-subtitle {
-  margin: -8px 0 4px;
+  margin: 10px 0 26px;
   color: var(--text-muted);
-  line-height: 1.45;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.login-features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: #3b4a54;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.login-features li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.login-feature-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.login-help {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: auto 0 0;
+  padding-top: 32px;
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 52px 48px 36px;
+  border-left: 1px solid var(--divider);
+  background: #fcfcfc;
+}
+
+.login-form-title {
+  margin: 0 0 2px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.login-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  animation: alert-in 0.2s ease-out;
+}
+
+.login-alert svg {
+  margin-top: 1px;
+}
+
+.login-alert.is-error {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.login-alert.is-info {
+  background: #e7f3fd;
+  color: #1a5c8c;
+}
+
+@keyframes alert-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 
 .field {
@@ -318,28 +413,110 @@ svg {
   gap: 6px;
 }
 
-.field span {
+.field-label {
   font-size: 13px;
-  color: var(--text-muted);
+  font-weight: 600;
+  color: var(--icon);
 }
 
-.field input {
-  padding: 11px 12px;
+.input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-icon {
+  position: absolute;
+  left: 12px;
+  color: #8696a0;
+  pointer-events: none;
+}
+
+.input-wrap input {
+  width: 100%;
+  height: 46px;
+  padding: 0 44px 0 40px;
   border: 1px solid #d1d7db;
   border-radius: 8px;
-  font-size: 15px;
+  background: var(--panel);
+  font: inherit;
+  font-size: 15.5px;
+  color: var(--text);
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.field input:focus {
+.input-prefix {
+  position: absolute;
+  left: 40px;
+  font-size: 15.5px;
+  color: var(--text);
+  pointer-events: none;
+}
+
+.input-wrap input.has-prefix {
+  padding-left: 64px;
+}
+
+.input-wrap input::placeholder {
+  color: #a0acb3;
+}
+
+.input-wrap input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(0, 168, 132, 0.15);
 }
 
-.login-card .btn-primary {
+.input-wrap:focus-within .input-icon {
+  color: var(--accent-dark);
+}
+
+.input-wrap input[aria-invalid="true"] {
+  border-color: #e6a19b;
+}
+
+.input-toggle {
+  position: absolute;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--icon);
+}
+
+@media (hover: hover) {
+  .input-toggle:hover {
+    background: rgba(11, 20, 26, 0.06);
+  }
+}
+
+.field-hint {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.field-hint.is-warning {
+  color: #b26a00;
+}
+
+.login-submit {
+  height: 46px;
   margin-top: 4px;
-  padding: 12px 22px;
+  font-size: 15px;
+}
+
+.login-secure {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
 }
 
 /* ── Каркас ─────────────────────────────────────────── */
@@ -1384,12 +1561,41 @@ svg {
     padding: calc(20px + env(safe-area-inset-top)) 16px 20px;
   }
 
+  /* На телефоне — только форма; описание консоли сокращаем до заголовка. */
   .login-card {
-    margin-top: 84px;
-    padding: 28px 22px 24px;
+    grid-template-columns: 1fr;
+    margin-top: 80px;
+  }
+
+  .login-intro {
+    padding: 24px 22px 0;
   }
 
   .login-title {
     font-size: 22px;
+  }
+
+  .login-subtitle {
+    margin: 6px 0 0;
+    font-size: 14px;
+  }
+
+  .login-features,
+  .login-form-title {
+    display: none;
+  }
+
+  .login-help {
+    padding-top: 10px;
+  }
+
+  .login-form {
+    padding: 20px 22px 26px;
+    border-left: none;
+    background: var(--panel);
+  }
+
+  .input-wrap input {
+    font-size: 16px;
   }
 }
