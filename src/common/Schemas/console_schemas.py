@@ -67,11 +67,18 @@ class ChatOut(BaseModel):
     unread_count: int
     is_taken_over: bool
     taken_over_by: Optional[TakenOverBy] = None
+    # Последнее сообщение именно ОТ КЛИЕНТА — для текста уведомления:
+    # в last_message_preview к моменту опроса уже может стоять ответ бота.
+    last_in_text: Optional[str] = None
+    last_in_type: Optional[str] = None
 
 
 class ChatListResponse(BaseModel):
     total: int
     items: List[ChatOut]
+    # Сумма непрочитанных по ВСЕМ диалогам, без учёта фильтров и поиска —
+    # для счётчика на вкладке браузера.
+    unread_total: int = 0
 
 
 class MessageOut(BaseModel):

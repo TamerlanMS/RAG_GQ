@@ -158,6 +158,15 @@ Real-time is short polling with an `after_id` cursor (chats 5s, thread 3s), not 
 self-heals across restarts and survives a topology change. Auth is bcrypt + JWT signed with `API_TOKEN`;
 seed managers with `docker compose exec api python scripts/seed_managers.py`.
 
+**New-message notifications** (desktop banner, sound, tab counter) live in the frontend only:
+`hooks/useNewMessageNotifier.js` polls the *unfiltered* `GET /console/chats` every 5s from a Web Worker
+timer (Chrome throttles plain timers in hidden tabs to once a minute) and fires when a chat's
+`unread_count` grows. The banner text comes from `ChatOut.last_in_text/last_in_type` (last *client*
+message, via `DISTINCT ON`), not `last_message_preview`, which is usually the bot's reply by then; the
+tab count is `ChatListResponse.unread_total` (all chats). The open chat is marked read **only while the
+tab is visible** — otherwise a hidden tab would zero the counter and swallow the notification. Works
+only while a console tab is open and on a secure origin (https or localhost); no Web Push.
+
 Phone normalization lives in `src/common/phone.py` (`normalize_phone`) and is the single source of
 truth — `check_phone_number` in `ReAct_agent.py` delegates to it. Do not reimplement it: the old inline
 version silently returned `None` for the `+8…`-style numbers some managers had and for raw Gupshup

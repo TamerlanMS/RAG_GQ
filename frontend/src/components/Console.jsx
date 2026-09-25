@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api.js";
 import { clearAuth } from "../auth.js";
 import { usePolling } from "../hooks/usePolling.js";
+import { useNewMessageNotifier } from "../hooks/useNewMessageNotifier.js";
+import { loadNotifySettings, saveNotifySettings } from "../notify/settings.js";
+import { unlockAudio } from "../notify/sound.js";
+import { NotifyPrompt, NotifySettings } from "./NotifySettings.jsx";
 import { Avatar, ChatList } from "./ChatList.jsx";
 import { Composer } from "./Composer.jsx";
 import { MessageThread } from "./MessageThread.jsx";
@@ -87,6 +91,37 @@ export function Console({ manager, onLogout }) {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
+  // ── Уведомления о новых сообщениях ───────────────────────
+  const [notifySettings, setNotifySettings] = useState(loadNotifySettings);
+  function updateNotifySettings(next) {
+    setNotifySettings(next);
+    saveNotifySettings(next);
+  }
+  useNewMessageNotifier({ settings: notifySettings, activeIdRef, onOpenChat: openChat });
+
+  // Звук браузер разрешает только после первого действия на странице.
+  useEffect(() => {
+    const unlock = () => unlockAudio();
+    document.addEventListener("pointerdown", unlock, { once: true });
+    document.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      document.removeEventListener("pointerdown", unlock);
+      document.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
+  // Вернулись на вкладку — открытый диалог теперь действительно прочитан.
+  useEffect(() => {
+    function onVisible() {
+      const id = activeIdRef.current;
+      if (document.visibilityState !== "visible" || id === null) return;
+      api.markRead(id).catch(() => {});
+      setChats((prev) => prev.map((c) => (c.id === id ? { ...c, unread_count: 0 } : c)));
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+
   const loadChats = useCallback(async () => {
     // "mine" — перехваченные именно этим менеджером (фильтрует сервер по id),
     // "bot" — те, что ведёт бот. Смешивать их в один булев флаг нельзя.
@@ -121,10 +156,11 @@ export function Console({ manager, onLogout }) {
         if (cancelled) return;
         setMessages(data.items);
         lastIdRef.current = data.items.length ? data.items[data.items.length - 1].id : 0;
+        if (document.visibilityState !== "visible") return undefined;
         return api.markRead(activeId).catch(() => {});
       })
       .then(() => {
-        if (!cancelled) {
+        if (!cancelled && document.visibilityState === "visible") {
           setChats((prev) => prev.map((c) => (c.id === activeId ? { ...c, unread_count: 0 } : c)));
         }
       })
@@ -165,7 +201,9 @@ export function Console({ manager, onLogout }) {
     });
     const lastItemId = data.items[data.items.length - 1].id;
     lastIdRef.current = Math.max(lastIdRef.current ?? 0, lastItemId);
-    if (hasFresh) api.markRead(chatId).catch(() => {});
+    // Вкладка скрыта — сообщение не прочитано: иначе счётчик обнулился бы,
+    // и уведомление о нём не пришло бы.
+    if (hasFresh && document.visibilityState === "visible") api.markRead(chatId).catch(() => {});
   }, []);
 
   usePolling(pollMessages, MESSAGES_INTERVAL_MS, { enabled: activeId !== null, deps: [activeId] });
@@ -285,12 +323,14 @@ export function Console({ manager, onLogout }) {
   const clientName = activeChat ? activeChat.display_name || activeChat.phone || activeChat.external_id : "";
 
   const sidebarHeader = (
+    <>
     <header className="panel-header sidebar-header">
       <div className="me" title={`${manager.name} — ${manager.role || "менеджер"}`}>
         <Avatar name={manager.name} size="sm" />
         <span className="me-brand">GQ Group</span>
       </div>
       <div className="header-actions">
+        <NotifySettings settings={notifySettings} onChange={updateNotifySettings} />
         {isDirector && (
           <button type="button" className="icon-btn" onClick={() => setView("stats")} title="Статистика">
             <IconStats />
@@ -301,6 +341,8 @@ export function Console({ manager, onLogout }) {
         </button>
       </div>
     </header>
+    <NotifyPrompt settings={notifySettings} onChange={updateNotifySettings} />
+    </>
   );
 
   if (view === "stats" && isDirector) {

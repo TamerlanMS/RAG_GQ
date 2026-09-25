@@ -208,7 +208,27 @@ def list_chats(
     stmt = stmt.order_by(Chat.last_message_at.desc().nullslast(), Chat.id.desc())
     rows = db.execute(stmt.limit(limit).offset(offset)).all()
 
-    return ChatListResponse(total=total, items=[_chat_out(c, h) for c, h in rows])
+    unread_total = int(db.execute(select(func.coalesce(func.sum(Chat.unread_count), 0))).scalar_one())
+
+    # Последнее входящее по каждому чату страницы — одним запросом (DISTINCT ON).
+    last_in: dict = {}
+    chat_ids = [c.id for c, _ in rows]
+    if chat_ids:
+        for chat_id, text_value, msg_type in db.execute(
+            select(ChatMessage.chat_id, ChatMessage.text, ChatMessage.msg_type)
+            .where(ChatMessage.chat_id.in_(chat_ids), ChatMessage.direction == "in")
+            .distinct(ChatMessage.chat_id)
+            .order_by(ChatMessage.chat_id, ChatMessage.id.desc())
+        ).all():
+            last_in[chat_id] = (text_value, msg_type)
+
+    items = []
+    for c, h in rows:
+        out = _chat_out(c, h)
+        if c.id in last_in:
+            out.last_in_text, out.last_in_type = last_in[c.id]
+        items.append(out)
+    return ChatListResponse(total=total, items=items, unread_total=unread_total)
 
 
 @router.get("/chats/{chat_id}/messages", response_model=MessageListResponse, tags=["console"])

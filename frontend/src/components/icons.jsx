@@ -5,6 +5,8 @@ import {
   AlertCircle,
   ArrowLeft,
   BarChart3,
+  Bell,
+  BellOff,
   Bot,
   Download,
   Eye,
@@ -50,6 +52,8 @@ export const IconPhone = wrap(Phone);
 export const IconShield = wrap(ShieldCheck);
 export const IconImage = wrap(Image);
 export const IconStats = wrap(BarChart3);
+export const IconBell = wrap(Bell);
+export const IconBellOff = wrap(BellOff);
 export const IconBot = wrap(Bot);
 export const IconDownload = wrap(Download);
 export const IconFile = wrap(FileText);

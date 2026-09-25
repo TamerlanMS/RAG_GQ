@@ -473,6 +473,150 @@ svg {
   margin-left: auto;
 }
 
+/* ── Уведомления: колокольчик, настройки, приглашение ─ */
+
+/* Панель привязана к шапке сайдбара, а не к кнопке: так она не уезжает
+   за левый край, сколько бы кнопок ни было в шапке. */
+.sidebar-header {
+  position: relative;
+}
+
+.notify-panel {
+  position: absolute;
+  top: 54px;
+  right: 10px;
+  z-index: 50;
+  width: 330px;
+  padding: 6px 0 14px;
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 8px 28px rgba(11, 20, 26, 0.2), 0 2px 6px rgba(11, 20, 26, 0.12);
+  animation: alert-in 0.15s ease-out;
+}
+
+.notify-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 6px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.toggle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 10px 18px;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .toggle-row:hover {
+    background: var(--hover);
+  }
+}
+
+.toggle-row.is-disabled {
+  cursor: default;
+}
+
+.toggle-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.toggle-label {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.toggle-hint {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+/* Переключатель в стиле WhatsApp вместо обычной галочки. */
+.toggle {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 36px;
+  height: 20px;
+  margin: 2px 0 0;
+  border-radius: 10px;
+  background: #c8d0d4;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s;
+}
+
+.toggle:checked {
+  background: var(--accent);
+}
+
+.toggle:checked::after {
+  transform: translateX(16px);
+}
+
+.toggle:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.notify-test {
+  margin: 8px 18px 0;
+}
+
+.notify-prompt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px 10px 14px;
+  background: #e7f3fd;
+  color: #1a5c8c;
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+
+.notify-prompt-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #cfe6fb;
+}
+
+.notify-prompt-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.notify-prompt .icon-btn {
+  color: #1a5c8c;
+}
+
 /* ── Левая панель ───────────────────────────────────── */
 
 .sidebar {
@@ -1476,6 +1620,13 @@ svg {
 
   .login-card {
     padding: 28px 22px 24px;
+  }
+
+  .notify-panel {
+    top: calc(56px + env(safe-area-inset-top));
+    left: 8px;
+    right: 8px;
+    width: auto;
   }
 
   .input-wrap input {
