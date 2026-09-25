@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "../api.js";
+import { IconArrowLeft, IconStats } from "./icons.jsx";
 
 const PERIODS = [
   ["today", "Сегодня"],
@@ -47,14 +48,16 @@ export function Stats({ onBack }) {
   }
 
   return (
-    <div className="stats-page">
-      <div className="stats-header">
-        <button type="button" className="btn-ghost" onClick={onBack}>
-          ← К диалогам
+    <div className="stats-screen">
+      <header className="panel-header stats-header">
+        <button type="button" className="icon-btn" onClick={onBack} title="К диалогам" aria-label="К диалогам">
+          <IconArrowLeft />
         </button>
+        <IconStats className="stats-header-icon" />
         <h2 className="stats-title">Статистика по заявкам</h2>
-      </div>
+      </header>
 
+      <div className="stats-page">
       <div className="stats-controls">
         <div className="stats-periods">
           {PERIODS.map(([key, label]) => (
@@ -129,6 +132,7 @@ export function Stats({ onBack }) {
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }

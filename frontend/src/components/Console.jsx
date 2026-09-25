@@ -2,11 +2,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api.js";
 import { clearAuth } from "../auth.js";
 import { usePolling } from "../hooks/usePolling.js";
-import { ChatList } from "./ChatList.jsx";
+import { Avatar, ChatList } from "./ChatList.jsx";
 import { Composer } from "./Composer.jsx";
 import { MessageThread } from "./MessageThread.jsx";
 import { Stats } from "./Stats.jsx";
-import { initials } from "../format.js";
+import {
+  IconArrowLeft,
+  IconBot,
+  IconConsole,
+  IconLogOut,
+  IconStats,
+  IconTakeover,
+} from "./icons.jsx";
 
 const CHATS_INTERVAL_MS = 5000;
 const MESSAGES_INTERVAL_MS = 3000;
@@ -275,38 +282,40 @@ export function Console({ manager, onLogout }) {
     onLogout();
   }
 
-  return (
-    <div className={`console${activeChat && view !== "stats" ? " is-chat-open" : ""}`}>
-      <header className="topbar">
-        <div className="topbar-brand">
-          <span className="label-full">GQ Group · консоль менеджера</span>
-          <span className="label-short">GQ Group</span>
-        </div>
-        <div className="topbar-user">
-          {isDirector && (
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={() => setView(view === "stats" ? "chats" : "stats")}
-              title={view === "stats" ? "Диалоги" : "Статистика"}
-            >
-              <span className="label-full">{view === "stats" ? "Диалоги" : "Статистика"}</span>
-              <span className="label-short">{view === "stats" ? "💬" : "📊"}</span>
-            </button>
-          )}
-          <span className="avatar avatar-sm" title={manager.name}>{initials(manager.name)}</span>
-          <span className="topbar-name">{manager.name}</span>
-          <button type="button" className="btn-ghost" onClick={logout}>
-            Выйти
-          </button>
-        </div>
-      </header>
+  const clientName = activeChat ? activeChat.display_name || activeChat.phone || activeChat.external_id : "";
 
-      {view === "stats" && isDirector ? (
+  const sidebarHeader = (
+    <header className="panel-header sidebar-header">
+      <div className="me" title={`${manager.name} — ${manager.role || "менеджер"}`}>
+        <Avatar name={manager.name} size="sm" />
+        <span className="me-brand">GQ Group</span>
+      </div>
+      <div className="header-actions">
+        {isDirector && (
+          <button type="button" className="icon-btn" onClick={() => setView("stats")} title="Статистика">
+            <IconStats />
+          </button>
+        )}
+        <button type="button" className="icon-btn" onClick={logout} title="Выйти">
+          <IconLogOut />
+        </button>
+      </div>
+    </header>
+  );
+
+  if (view === "stats" && isDirector) {
+    return (
+      <div className="console">
         <Stats onBack={() => setView("chats")} />
-      ) : (
+      </div>
+    );
+  }
+
+  return (
+    <div className={`console${activeChat ? " is-chat-open" : ""}`}>
       <div className="layout">
         <ChatList
+          header={sidebarHeader}
           chats={chats}
           activeId={activeId}
           onSelect={openChat}
@@ -319,44 +328,55 @@ export function Console({ manager, onLogout }) {
 
         <main className="pane">
           {!activeChat ? (
-            <div className="empty-state">Выберите диалог слева</div>
+            <div className="empty-state">
+              <div className="empty-state-icon">
+                <IconConsole size={56} strokeWidth={1.25} />
+              </div>
+              <h2>GQ Group — консоль менеджера</h2>
+              <p>
+                Выберите диалог слева, чтобы читать переписку клиента с ботом,
+                <br />
+                перехватить диалог и ответить самому.
+              </p>
+            </div>
           ) : (
             <>
-              <div className="pane-header">
-                <div className="pane-header-main">
-                  <button type="button" className="btn-back" onClick={closeChat} aria-label="К списку диалогов">
-                    ←
-                  </button>
-                  <div className="pane-header-titles">
-                    <div className="pane-title">
-                      {activeChat.display_name || activeChat.phone || activeChat.external_id}
-                    </div>
-                    <div className="pane-subtitle">
-                      {activeChat.phone || activeChat.external_id} · WhatsApp
-                    </div>
-                  </div>
+              <header className="panel-header pane-header">
+                <button type="button" className="icon-btn btn-back" onClick={closeChat} aria-label="К списку диалогов">
+                  <IconArrowLeft />
+                </button>
+                <Avatar name={clientName} size="sm" />
+                <div className="pane-header-titles">
+                  <div className="pane-title">{clientName}</div>
+                  <div className="pane-subtitle">{activeChat.phone || activeChat.external_id} · WhatsApp</div>
                 </div>
 
                 <div className="takeover-bar">
                   {activeChat.is_taken_over ? (
                     <>
-                      <span className="takeover-label">
-                        Диалог ведёт {activeChat.taken_over_by?.name || "менеджер"}
+                      <span className="takeover-label" title="Бот молчит, отвечает менеджер">
+                        <IconTakeover size={16} />
+                        <span className="takeover-text">Ведёт {activeChat.taken_over_by?.name || "менеджер"}</span>
                       </span>
-                      <button type="button" className="btn-ghost" onClick={handleRelease}>
-                        Вернуть боту
+                      <button type="button" className="btn-outline" onClick={handleRelease}>
+                        <IconBot size={16} />
+                        <span>Вернуть боту</span>
                       </button>
                     </>
                   ) : (
                     <>
-                      <span className="takeover-label takeover-label-bot">Отвечает бот</span>
-                      <button type="button" className="btn-secondary" onClick={() => handleTakeover(false)}>
-                        Перехватить диалог
+                      <span className="takeover-label is-bot">
+                        <IconBot size={16} />
+                        <span className="takeover-text">Отвечает бот</span>
+                      </span>
+                      <button type="button" className="btn-primary btn-sm" onClick={() => handleTakeover(false)}>
+                        <IconTakeover size={16} />
+                        <span>Перехватить</span>
                       </button>
                     </>
                   )}
                 </div>
-              </div>
+              </header>
 
               {threadError && <div className="pane-error">{threadError}</div>}
 
@@ -366,7 +386,6 @@ export function Console({ manager, onLogout }) {
           )}
         </main>
       </div>
-      )}
     </div>
   );
 }

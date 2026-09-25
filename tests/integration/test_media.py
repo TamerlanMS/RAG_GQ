@@ -155,6 +155,9 @@ for msg_type, path, mime, fname, caption, voice in CASES:
     if not mid:
         continue
     chat_id = chat_id or q1("SELECT chat_id FROM chat_messages WHERE id = :i", i=mid)
+    stored = q1("SELECT msg_type FROM chat_messages WHERE id = :i", i=mid)
+    want = "voice" if voice else msg_type
+    check(f"{label}: msg_type = {want}", stored == want, str(stored))
     m = wait_for(lambda: (lambda x: x if x and x.get("media_url") else None)(api_message(chat_id, mid)), timeout=30)
     check(f"{label}: в API появилась media_url", bool(m), str(m)[:200] if not m else "")
     if not m:

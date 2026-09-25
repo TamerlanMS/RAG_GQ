@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useVoiceRecorder } from "../hooks/useVoiceRecorder.js";
+import { IconMic, IconPaperclip, IconSend, IconTrash, IconX } from "./icons.jsx";
 
 // Лимит WhatsApp на документ; для фото (5 МБ) и видео/аудио (16 МБ) точную
 // проверку делает сервер — он знает, каким типом уйдёт файл.
@@ -24,7 +25,16 @@ export function Composer({ onSend, onSendFile, onSendVoice, disabled }) {
   const [fileError, setFileError] = useState("");
   const [busy, setBusy] = useState(false);
   const inputRef = useRef(null);
+  const textRef = useRef(null);
   const voice = useVoiceRecorder();
+
+  // Поле растёт вместе с текстом (до max-height в CSS), как в WhatsApp.
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [text, voice.recording]);
 
   async function sendVoice() {
     const blob = await voice.stop();
@@ -79,21 +89,23 @@ export function Composer({ onSend, onSendFile, onSendVoice, disabled }) {
     setFile(picked);
   }
 
-  const canSend = !disabled && !busy && (file || text.trim());
+  const hasContent = Boolean(file || text.trim());
+  const canSend = !disabled && !busy && hasContent;
 
   if (voice.recording) {
     return (
       <div className="composer-wrap">
         <div className="composer composer-recording">
-          <button type="button" className="btn-ghost" onClick={voice.cancel} title="Удалить запись">
-            ✕<span className="label-full"> Отменить</span>
+          <button type="button" className="icon-btn" onClick={voice.cancel} title="Удалить запись">
+            <IconTrash />
           </button>
           <span className="rec-indicator">
-            <span className="rec-dot" /> Запись {formatTimer(voice.seconds)}
+            <span className="rec-dot" />
+            <span className="rec-timer">{formatTimer(voice.seconds)}</span>
+            <span className="rec-hint">Идёт запись…</span>
           </span>
-          <button type="button" className="btn-primary btn-send" onClick={sendVoice} title="Отправить голосовое">
-            <span className="label-full">Отправить голосовое</span>
-            <span className="label-short">➤</span>
+          <button type="button" className="send-btn" onClick={sendVoice} title="Отправить голосовое">
+            <IconSend />
           </button>
         </div>
       </div>
@@ -103,31 +115,34 @@ export function Composer({ onSend, onSendFile, onSendVoice, disabled }) {
   return (
     <div className="composer-wrap">
       {voice.error && (
-        <div className="composer-file">
-          <span className="composer-file-error">{voice.error}</span>
-          <button type="button" className="composer-file-remove" onClick={() => voice.setError("")}>
-            ×
+        <div className="composer-note is-error">
+          <span>{voice.error}</span>
+          <button type="button" className="icon-btn icon-btn-sm" onClick={() => voice.setError("")} title="Скрыть">
+            <IconX size={16} />
           </button>
         </div>
       )}
       {(file || fileError) && (
-        <div className="composer-file">
+        <div className={`composer-note${file ? "" : " is-error"}`}>
           {file ? (
             <>
-              <span className="composer-file-name">📎 {file.name}</span>
+              <span className="composer-file-icon">
+                <IconPaperclip size={16} />
+              </span>
+              <span className="composer-file-name">{file.name}</span>
               <span className="composer-file-size">{formatSize(file.size)}</span>
               <button
                 type="button"
-                className="composer-file-remove"
+                className="icon-btn icon-btn-sm"
                 onClick={() => setFile(null)}
                 disabled={busy}
                 title="Убрать файл"
               >
-                ×
+                <IconX size={16} />
               </button>
             </>
           ) : (
-            <span className="composer-file-error">{fileError}</span>
+            <span>{fileError}</span>
           )}
         </div>
       )}
@@ -135,45 +150,40 @@ export function Composer({ onSend, onSendFile, onSendVoice, disabled }) {
         <input ref={inputRef} type="file" hidden onChange={pickFile} />
         <button
           type="button"
-          className="btn-attach"
+          className="icon-btn"
           onClick={() => inputRef.current?.click()}
           disabled={disabled || busy}
           title="Прикрепить файл: фото, видео, аудио или документ"
         >
-          📎
-        </button>
-        <button
-          type="button"
-          className="btn-attach"
-          onClick={voice.start}
-          disabled={disabled || busy || Boolean(file)}
-          title="Записать голосовое"
-        >
-          🎤
+          <IconPaperclip />
         </button>
         <textarea
+          ref={textRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={
-            file
-              ? "Подпись к файлу (необязательно)…"
-              : IS_TOUCH
-                ? "Сообщение"
-                : "Напишите сообщение…  (Enter — отправить, Shift+Enter — новая строка)"
-          }
+          placeholder={file ? "Подпись к файлу (необязательно)" : "Введите сообщение"}
+          title={IS_TOUCH ? undefined : "Enter — отправить, Shift+Enter — новая строка"}
           rows={1}
           maxLength={file ? 1024 : 4000}
           disabled={disabled || busy}
         />
-        <button type="button" className="btn-primary btn-send" onClick={send} disabled={!canSend} title="Отправить">
-          {busy ? "…" : (
-            <>
-              <span className="label-full">Отправить</span>
-              <span className="label-short">➤</span>
-            </>
-          )}
-        </button>
+        {/* Как в WhatsApp: пустое поле — микрофон, есть текст или файл — отправка. */}
+        {hasContent || busy ? (
+          <button type="button" className="send-btn" onClick={send} disabled={!canSend} title="Отправить">
+            {busy ? <span className="spinner" /> : <IconSend />}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={voice.start}
+            disabled={disabled}
+            title="Записать голосовое"
+          >
+            <IconMic />
+          </button>
+        )}
       </div>
     </div>
   );

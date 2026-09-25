@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, ApiError } from "../api.js";
 import { setAuth } from "../auth.js";
+import { IconConsole } from "./icons.jsx";
 
 export function Login({ onSuccess }) {
   const [phone, setPhone] = useState("");
@@ -25,9 +26,15 @@ export function Login({ onSuccess }) {
 
   return (
     <div className="login-page">
+      <div className="login-band">
+        <div className="login-brand">
+          <IconConsole size={30} strokeWidth={1.5} />
+          <span>GQ Group</span>
+        </div>
+      </div>
       <form className="login-card" onSubmit={submit}>
-        <h1 className="login-title">GQ Group</h1>
-        <p className="login-subtitle">Консоль менеджера</p>
+        <h1 className="login-title">Консоль менеджера</h1>
+        <p className="login-subtitle">Переписка клиентов с ботом WhatsApp. Войдите по номеру телефона и паролю.</p>
 
         <label className="field">
           <span>Телефон</span>

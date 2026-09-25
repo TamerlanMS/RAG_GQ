@@ -813,6 +813,10 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                     media_id  = media.get("id", "")
                     media_url = media.get("url", "")
                     mime_type = media.get("mime_type", "")
+                    # Голосовое от аудиофайла отличаем по флагу — в консоли у
+                    # него своя иконка и подпись «Голосовое».
+                    if msg_type == "audio" and media.get("voice"):
+                        msg_type = "voice"
 
                 elif msg_type == "interactive":
                     interactive = msg.get("interactive", {})

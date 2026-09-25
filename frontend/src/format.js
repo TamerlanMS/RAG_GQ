@@ -48,3 +48,39 @@ export function dayKey(iso) {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? "" : d.toDateString();
 }
+
+// Спокойная палитра для аватаров: у каждого клиента свой постоянный цвет —
+// по нему быстрее находишь нужный чат в списке.
+const AVATAR_COLORS = ["#4f9d8f", "#5b8def", "#c47ad0", "#e0875a", "#4aa3c7", "#9c8cd9", "#d46a7e", "#6fae5c"];
+
+export function avatarColor(seed) {
+  const s = String(seed || "?");
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+
+// Превью последнего сообщения приходит с сервера с эмодзи-подписью типа
+// (src/common/chat_store.py, _TYPE_LABELS: «📷 Фото», «📎 Документ», …).
+// Распознаём её и отдаём тип отдельно — вместо эмодзи рисуется SVG-иконка.
+const PREVIEW_PREFIXES = [
+  ["📷", "image"],
+  ["📎", "document"],
+  ["🎥", "video"],
+  ["🎵", "audio"],
+  ["🎤", "voice"],
+  ["🏷", "sticker"],
+  ["🔘", "button"],
+  ["ℹ️", "system"],
+  ["ℹ", "system"],
+];
+
+export function splitPreview(preview) {
+  const text = String(preview || "").trim();
+  for (const [emoji, type] of PREVIEW_PREFIXES) {
+    if (text.startsWith(emoji)) {
+      return { type, text: text.slice(emoji.length).replace(/^️/, "").trim() };
+    }
+  }
+  return { type: null, text };
+}
