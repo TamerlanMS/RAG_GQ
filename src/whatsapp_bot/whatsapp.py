@@ -19,6 +19,7 @@ import base64
 import hmac
 import os
 import random
+import uuid
 from pathlib import Path
 
 import httpx
@@ -459,6 +460,32 @@ async def _send_whatsapp_buttons(to_phone: str, body_text: str, buttons: list[di
         logger.error("_send_whatsapp_buttons error (to=%s): %s", to_phone, e)
 
 
+async def _record_failed_delivery(status: dict) -> None:
+    """Статус failed от WhatsApp → системная отметка в диалоге консоли."""
+    phone = str(status.get("recipient_id") or "")
+    errors = status.get("errors") or [{}]
+    err = errors[0] if isinstance(errors[0], dict) else {}
+    code = err.get("code", "")
+    title = err.get("title") or err.get("message") or "причина не указана"
+    details = (err.get("error_data") or {}).get("details") or ""
+    logger.warning("WhatsApp не доставил сообщение %s клиенту %s: %s %s %s",
+                   status.get("id"), phone, code, title, details)
+    if not phone:
+        return
+    await chat_store.save_message(
+        channel=CHANNEL_WHATSAPP,
+        external_id=phone,
+        direction="out",
+        author="system",
+        text_body=(f"⚠️ WhatsApp не доставил сообщение клиенту: {title}"
+                   + (f" (код {code})" if code else "")
+                   + (f". {details}" if details and details != title else "")),
+        msg_type="system",
+        # Gupshup повторяет вебхуки — одна отметка на один отказ.
+        external_msg_id=f"failed:{status.get('id') or uuid.uuid4().hex}",
+    )
+
+
 # ─── Обработка входящего сообщения ───────────────────────────
 
 async def _process_message(
@@ -737,7 +764,14 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                 logger.info("Gupshup webhook: пропущен field=%s", change.get("field"))
                 continue
 
-            # Статусы доставки (sent/delivered/read) приходят в том же field
+            # Статусы доставки (sent/delivered/read/failed) приходят в том же field.
+            # Gupshup принимает отправку сразу (202), а о том, что WhatsApp её
+            # отверг (файл не скачался, не тот формат, истекло 24-часовое окно…),
+            # сообщает только здесь, позже. Такой отказ показываем в консоли —
+            # иначе менеджер считает, что клиент получил сообщение.
+            for st in value.get("statuses", []) or []:
+                if st.get("status") == "failed":
+                    background_tasks.add_task(_record_failed_delivery, st)
             if value.get("statuses") and not value.get("messages"):
                 continue
 
