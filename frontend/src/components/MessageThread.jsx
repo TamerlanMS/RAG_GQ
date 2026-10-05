@@ -93,6 +93,19 @@ function Attachment({ msg }) {
   );
 }
 
+// Сообщение только из 1–3 смайликов WhatsApp показывает крупно — так же и здесь.
+const EMOJI_ONLY = /^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|\p{Regional_Indicator}|\u200d|\ufe0f|\s)+$/u;
+
+function jumboEmoji(text) {
+  const t = (text || "").trim();
+  if (!t || !EMOJI_ONLY.test(t) || /^[\d#*\s]+$/.test(t)) return false;
+  const count =
+    typeof Intl !== "undefined" && Intl.Segmenter
+      ? [...new Intl.Segmenter("ru", { granularity: "grapheme" }).segment(t.replace(/\s+/g, ""))].length
+      : [...t.replace(/\s+/g, "")].length;
+  return count > 0 && count <= 3;
+}
+
 function MessageBubble({ msg, first }) {
   if (msg.author === "system") {
     return <div className="system-note">{msg.text}</div>;
@@ -118,7 +131,7 @@ function MessageBubble({ msg, first }) {
           </div>
         )}
         {hasAttachment && <Attachment msg={msg} />}
-        {msg.text && <span className="bubble-text">{msg.text}</span>}
+        {msg.text && <span className={`bubble-text${jumboEmoji(msg.text) ? " is-jumbo" : ""}`}>{msg.text}</span>}
         <span className="bubble-time">
           {msg.pending ? "отправляется…" : formatClock(msg.created_at)}
         </span>

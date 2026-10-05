@@ -44,7 +44,8 @@ body,
 }
 
 body {
-  font-family: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif,
+    "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji";
   font-size: 14.2px;
   color: var(--text);
   background: var(--app-bg);
@@ -1237,6 +1238,105 @@ svg {
   color: var(--icon);
 }
 
+/* ── Смайлики ───────────────────────────────────────── */
+
+.bubble-text.is-jumbo {
+  display: inline-block;
+  font-size: 34px;
+  line-height: 1.2;
+}
+
+.composer-wrap {
+  position: relative;
+}
+
+.icon-btn.is-active {
+  color: var(--accent-dark);
+  background: rgba(0, 168, 132, 0.1);
+}
+
+.emoji-panel {
+  position: absolute;
+  bottom: 100%;
+  left: 12px;
+  z-index: 40;
+  width: 360px;
+  max-width: calc(100vw - 24px);
+  margin-bottom: 6px;
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 8px 28px rgba(11, 20, 26, 0.2), 0 2px 6px rgba(11, 20, 26, 0.12);
+  animation: alert-in 0.15s ease-out;
+  overflow: hidden;
+}
+
+.emoji-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.emoji-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--icon);
+}
+
+.emoji-tab.is-active {
+  color: var(--accent-dark);
+  border-bottom-color: var(--accent);
+}
+
+.emoji-title {
+  padding: 8px 14px 2px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--text-muted);
+}
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  max-height: 240px;
+  padding: 4px 8px 10px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.emoji-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+  transition: background 0.1s, transform 0.1s;
+}
+
+@media (hover: hover) {
+  .emoji-cell:hover {
+    background: var(--panel-header);
+    transform: scale(1.12);
+  }
+}
+
+.emoji-cell:active {
+  background: var(--panel-header);
+}
+
 /* ── Поле ввода ─────────────────────────────────────── */
 
 .composer-wrap {
@@ -1620,6 +1720,18 @@ svg {
 
   .login-card {
     padding: 28px 22px 24px;
+  }
+
+  .emoji-panel {
+    left: 6px;
+    right: 6px;
+    width: auto;
+    max-width: none;
+  }
+
+  .emoji-grid {
+    grid-template-columns: repeat(7, 1fr);
+    max-height: 210px;
   }
 
   .notify-panel {

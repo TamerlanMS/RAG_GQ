@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useVoiceRecorder } from "../hooks/useVoiceRecorder.js";
-import { IconMic, IconPaperclip, IconSend, IconTrash, IconX } from "./icons.jsx";
+import { EmojiPicker } from "./EmojiPicker.jsx";
+import { IconEmojiSmile, IconMic, IconPaperclip, IconSend, IconTrash, IconX } from "./icons.jsx";
 
 // Лимит WhatsApp на документ; для фото (5 МБ) и видео/аудио (16 МБ) точную
 // проверку делает сервер — он знает, каким типом уйдёт файл.
@@ -26,6 +27,41 @@ export function Composer({ onSend, onSendFile, onSendVoice, disabled }) {
   const [busy, setBusy] = useState(false);
   const inputRef = useRef(null);
   const textRef = useRef(null);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const emojiBtnRef = useRef(null);
+  // Позиция курсора в поле: на телефоне фокус уходит с поля при нажатии на
+  // смайлик, и selectionStart уже нельзя прочитать — берём запомненную.
+  const caretRef = useRef({ start: 0, end: 0 });
+
+  function rememberCaret() {
+    const el = textRef.current;
+    if (el) caretRef.current = { start: el.selectionStart ?? el.value.length, end: el.selectionEnd ?? el.value.length };
+  }
+
+  function insertEmoji(emoji) {
+    const el = textRef.current;
+    const focused = el && document.activeElement === el;
+    const { start, end } = focused ? { start: el.selectionStart, end: el.selectionEnd } : caretRef.current;
+    const s0 = Math.min(start ?? text.length, text.length);
+    const e0 = Math.min(end ?? text.length, text.length);
+    const limit = file ? 1024 : 4000;
+    const next = text.slice(0, s0) + emoji + text.slice(e0);
+    if (next.length > limit) return;
+    setText(next);
+    const pos = s0 + emoji.length;
+    caretRef.current = { start: pos, end: pos };
+    // На компьютере возвращаем курсор в поле; на телефоне — нет, иначе
+    // всплывёт клавиатура и закроет панель смайликов.
+    requestAnimationFrame(() => {
+      if (!el) return;
+      if (!IS_TOUCH) el.focus();
+      try {
+        el.setSelectionRange(pos, pos);
+      } catch {
+        /* поле могло исчезнуть (запись голосового) */
+      }
+    });
+  }
   const voice = useVoiceRecorder();
 
   // Поле растёт вместе с текстом (до max-height в CSS), как в WhatsApp.
@@ -62,6 +98,8 @@ export function Composer({ onSend, onSendFile, onSendVoice, disabled }) {
         await onSend(value);
       }
       setText("");
+      setEmojiOpen(false);
+      caretRef.current = { start: 0, end: 0 };
     } catch {
       // Ошибку показывает Console; файл и подпись оставляем, чтобы повторить.
     } finally {
@@ -146,8 +184,24 @@ export function Composer({ onSend, onSendFile, onSendVoice, disabled }) {
           )}
         </div>
       )}
+      {emojiOpen && (
+        <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} anchorRef={emojiBtnRef} />
+      )}
       <div className="composer">
         <input ref={inputRef} type="file" hidden onChange={pickFile} />
+        <button
+          ref={emojiBtnRef}
+          type="button"
+          className={`icon-btn${emojiOpen ? " is-active" : ""}`}
+          // Не забираем фокус у поля: курсор остаётся там, куда вставлять смайлик.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setEmojiOpen((v) => !v)}
+          disabled={disabled || busy}
+          title="Смайлики"
+          aria-expanded={emojiOpen}
+        >
+          <IconEmojiSmile />
+        </button>
         <button
           type="button"
           className="icon-btn"
@@ -162,6 +216,10 @@ export function Composer({ onSend, onSendFile, onSendVoice, disabled }) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
+          onSelect={rememberCaret}
+          onKeyUp={rememberCaret}
+          onClick={rememberCaret}
+          onBlur={rememberCaret}
           placeholder={file ? "Подпись к файлу (необязательно)" : "Введите сообщение"}
           title={IS_TOUCH ? undefined : "Enter — отправить, Shift+Enter — новая строка"}
           rows={1}
