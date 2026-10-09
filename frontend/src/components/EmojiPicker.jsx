@@ -16,7 +16,7 @@ const CATEGORIES = [
     key: "gesture",
     title: "Жесты",
     Icon: IconEmojiGesture,
-    emojis: "👍 👎 👌 ✌️ 🤞 🤟 👋 🤚 ✋ 🖐️ 👏 🙌 🙏 💪 👉 👈 👆 👇 ☝️ ✍️ 🤙 🫡 🤷 🤷‍♂️ 🤷‍♀️ 🙋 🙋‍♂️ 🙋‍♀️ 💁 💁‍♀️",
+    emojis: "👍 👎 👌 ✌️ 🤞 🫰 🤟 👋 🤚 ✋ 🖐️ 👏 🙌 🙏 💪 👉 👈 👆 👇 ☝️ ✍️ 🤙 🫡 🤷 🤷‍♂️ 🤷‍♀️ 🙋 🙋‍♂️ 🙋‍♀️ 💁 💁‍♀️",
   },
   {
     key: "heart",
